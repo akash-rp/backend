@@ -49,18 +49,14 @@ async function createAccount(userData) {
 
 async function userDetails(id) {
   try {
-    console.log(id);
     const response = await axios.get(`http://localhost:9011/api/user/${id}`, {
       headers: {
         Authorization:
           "nxm_m_OvXrK8BRVkpSPg0FlOz_AD1DvtL_-_scuyfEENB22mWGno1St5",
       },
     });
-    console.log("im here");
-    console.log(response.data);
     return response.data;
   } catch (error) {
-    console.log(error.response);
     throw "something went wrong";
   }
 }

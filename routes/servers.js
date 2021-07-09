@@ -20,7 +20,14 @@ async function getServers(req, res) {
       element["ip"] = element["inet_ntoa(ip)"];
       delete element["inet_ntoa(ip)"];
     });
+    console.log("Here");
     console.log(data);
+    if (data.length ==[]){
+      res.json({
+        error: "something went wrong",
+      })
+      return
+    }
     res.json(data);
   } catch (error) {
     res.json({
@@ -61,14 +68,16 @@ async function server(req, res) {
     result = result[0];
     result["ip"] = result["inet_ntoa(ip)"];
     delete result["inet_ntoa(ip)"];
-    let response = await axios.get("http://" + result.ip + ":8081/serverstats");
+    let response = await axios.get(
+      "http://" + result.ip + ":8081/serverstats",
+      { timeout: 5000 }
+    );
     res.json(response.data);
   } catch (error) {
     if (error.errno === 1062) {
       res.json({ error: "IP address already exists" });
       return;
     }
-    console.log(error);
     res.json({
       error: "Server not found",
     });
