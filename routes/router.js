@@ -6,9 +6,12 @@ const router = express.Router();
 
 const users = require("./users");
 const servers = require("./servers");
+const sites = require("./sites");
 const ssh = require("./ssh");
-// get the client
+const db = require("../db/mongo");
 
+const { customAlphabet } = require("nanoid");
+// get the client
 router.get("/", async function (req, res) {});
 
 router.post("/login", (req, res) => {
@@ -51,6 +54,42 @@ router.post("/addserver", (req, res) => {
 });
 
 router.get("/server/:serverid", (req, res) => {
-  servers.server(req, res);
+  servers.serverDetails(req, res);
 });
+
+router.get("/sitesummary/:serverid", (req, res) => {
+  sites.getSiteSummary(req, res);
+});
+
+router.post("/addsite/:serverid", (req, res) => {
+  sites.addSite(req, res);
+});
+
+router.get("/server/:serverid/sites", (req, res) => {
+  sites.getSitesOfServer(req, res);
+});
+
+router.get("/site/:siteid", (req, res) => {
+  sites.getOneSite(req, res);
+});
+
+router.post("/site/:siteid/addDomain", (req, res) => {
+  sites.addDomainToSite(req, res);
+});
+
+router.post("/site/:siteid/deleteDomain", (req, res) => {
+  sites.deleteDomain(req, res);
+});
+
+router.post("/site/:siteid/changeRoute", (req, res) => {
+  sites.changeRoute(req, res);
+});
+
+router.post("/site/:siteid/wildcard", (req, res) => {
+  sites.changeWildcard(req, res);
+});
+
+router.post("/site/:siteid/changePrimary",(req,res)=>{
+  sites.changePrimary(req,res)
+})
 module.exports = router;

@@ -1,7 +1,12 @@
 const db = require("../db/db");
-const nanoid = require("nanoid");
+const mongodb = require("../db/mongo");
+const { customAlphabet } = require("nanoid");
 const { default: axios } = require("axios");
 
+const nanoid = customAlphabet(
+  "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+  12
+);
 async function getServers(req, res) {
   if (!req.body.userId) {
     res.status(400).json({
@@ -11,77 +16,91 @@ async function getServers(req, res) {
   }
   const userId = req.body.userId;
   try {
-    data = await db.query(
-      "SELECT name,inet_ntoa(ip),provider,serverid FROM servers WHERE userid = ? ",
-      [userId]
-    );
+    // data = await db.query(
+    //   "SELECT name,inet_ntoa(ip),provider,serverid FROM servers WHERE userid = ? ",
+    //   [userId]
+    // );
+    console.log("userID", userId);
+    const data = await mongodb
+      .get()
+      .db("hosting")
+      .collection("servers")
+      .find({ userId: userId })
+      .toArray();
     console.log(data);
-    data.forEach((element) => {
-      element["ip"] = element["inet_ntoa(ip)"];
-      delete element["inet_ntoa(ip)"];
-    });
-    console.log("Here");
-    console.log(data);
-    if (data.length ==[]){
-      res.json({
-        error: "something went wrong",
-      })
-      return
-    }
-    res.json(data);
+    if (data.length == 0) {
+      res.json();
+    } else res.json(data);
   } catch (error) {
     res.json({
-      error: "something went wrong",
+      error: "Something went wrong",
     });
   }
 }
 
 async function addServer(req, res) {
   const data = req.body;
-  try {
-    // INSERT into servers value (?,?,?,?,?)
-    result = await db.query(
-      "INSERT into servers value (?,?,?,?,INET_ATON(?))",
-      [nanoid.nanoid(12), data.userid, data.name, data.provider, data.ip]
-    );
+  // INSERT into servers value (?,?,?,?,?)
+  // result = await db.query(
+  //   "INSERT into servers value (?,?,?,?,INET_ATON(?))",
+  //   [nanoid.nanoid(12), data.userid, data.name, data.provider, data.ip]
+  // );
+  id = nanoid();
+  insertData = {
+    serverId: id,
+    userId: data.userId,
+    name: data.name,
+    provider: data.provider,
+    ip: data.ip,
+  };
 
-    res.json(result);
-  } catch (error) {
-    if (error.errno === 1062) {
-      res.json({ error: "IP address already exists" });
-      return;
-    }
-    res.json({
-      error: error,
+  mongodb
+    .get()
+    .db("hosting")
+    .collection("servers")
+    .insertOne(insertData)
+    .then((result) => {
+      res.json(result);
+    })
+    .catch((err) => {
+      if (err.code == 11000) {
+        res.json({ error: "IP address already exists" });
+      }
     });
-  }
 }
 
-async function server(req, res) {
+async function serverDetails(req, res) {
   const serverid = req.params.serverid;
   try {
     // INSERT into servers value (?,?,?,?,?)
-    result = await db.query(
-      "SELECT inet_ntoa(ip) from servers where serverid = ?",
-      [serverid]
-    );
+    let result = await mongodb
+      .get()
+      .db("hosting")
+      .collection("servers")
+      .find({ serverId: serverid })
+      .toArray();
+
     result = result[0];
-    result["ip"] = result["inet_ntoa(ip)"];
-    delete result["inet_ntoa(ip)"];
+    if (!result) {
+      throw Error;
+    }
     let response = await axios.get(
       "http://" + result.ip + ":8081/serverstats",
       { timeout: 5000 }
     );
-    res.json(response.data);
+    let sites = await axios.get("http://" + result.ip + ":8081/sites", {
+      timeout: 5000,
+    });
+    console.log(response.data);
+    sites = sites.data;
+    sites = { sites: { ...sites } };
+    response = Object.assign(response.data, sites);
+    res.json(response);
   } catch (error) {
-    if (error.errno === 1062) {
-      res.json({ error: "IP address already exists" });
-      return;
-    }
     res.json({
       error: "Server not found",
     });
   }
 }
 
-module.exports = { getServers, addServer, server };
+module.exports = { getServers, addServer, serverDetails };
