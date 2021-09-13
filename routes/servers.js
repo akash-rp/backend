@@ -20,14 +20,12 @@ async function getServers(req, res) {
     //   "SELECT name,inet_ntoa(ip),provider,serverid FROM servers WHERE userid = ? ",
     //   [userId]
     // );
-    console.log("userID", userId);
     const data = await mongodb
       .get()
       .db("hosting")
       .collection("servers")
       .find({ userId: userId })
       .toArray();
-    console.log(data);
     if (data.length == 0) {
       res.json();
     } else res.json(data);
@@ -91,7 +89,6 @@ async function serverDetails(req, res) {
     let sites = await axios.get("http://" + result.ip + ":8081/sites", {
       timeout: 5000,
     });
-    console.log(response.data);
     sites = sites.data;
     sites = { sites: { ...sites } };
     response = Object.assign(response.data, sites);

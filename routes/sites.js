@@ -20,6 +20,7 @@ async function getSiteSummary(req, res) {
       .toArray();
     res.json(data);
   } catch (err) {
+    console.log(err);
     res.json({ error: "Something went wrong" });
   }
 }
@@ -84,16 +85,13 @@ async function addSite(req, res) {
         });
         return;
       }
-      console.log("site", site);
+
       if (site.domain.primary.subDomain) {
         if (site.domain.primary.baseurl === url) {
           if (!exclude.includes(site.domain.primary.url)) {
-            console.log("Inside exclude", site.domain.primary.url);
             exclude.push(site.domain.primary.url);
-            console.log(exclude);
           }
           if (!site.domain.exclude.includes(url)) {
-            console.log("inside domain exclude", url);
             site.domain.exclude.push(url);
             site.domain.exclude.push("www." + url);
           }
@@ -175,7 +173,6 @@ async function addSite(req, res) {
     let siteJSON = [];
     for (let site of sites) {
       let aliasDomain = [];
-      console.log("site json", site);
       for (let domain in site.domain.alias) {
         aliasDomain.push({
           url: domain.url,
@@ -197,7 +194,6 @@ async function addSite(req, res) {
         aliasDomain: aliasDomain,
         exclude: site.domain.exclude,
       });
-      console.log("exclude", exclude);
     }
     await axios.post(
       "http://" + result.ip + ":8081/wp/add",
@@ -395,12 +391,9 @@ async function addDomainToSite(req, res) {
           return;
         }
         if (domain.subDomain) {
-          console.log("inside domain.subdoamin");
           if (domain.baseurl === url) {
             if (site.siteId !== siteid) {
-              console.log("should be here");
               mainSite.domain.exclude.push(domain.url);
-              console.log("main site", mainSite.domain.exclude);
               if (!site.domain.exclude.includes(url)) {
                 site.domain.exclude.push(url);
                 site.domain.exclude.push("www." + url);
@@ -458,7 +451,6 @@ async function addDomainToSite(req, res) {
         }
       }
     }
-    console.log("mian site exclude ", mainSite.domain.exclude);
     sites.forEach((site) => {
       if (site.siteId == siteid) {
         if (data.type == "alias") {
@@ -475,6 +467,7 @@ async function addDomainToSite(req, res) {
       }
     });
     let siteJSON = addJSON(sites);
+    console.time("axios");
     await axios.post(
       "http://" + ip + ":8081/domainedit",
       {
@@ -487,6 +480,7 @@ async function addDomainToSite(req, res) {
         },
       }
     );
+    console.timeEnd("axios");
     for (let site of sites) {
       await mongodb
         .get()
@@ -536,6 +530,7 @@ async function deleteDomain(req, res) {
       }
     }
     siteJSON = addJSON(sites);
+    console.time("delete");
     await axios.post(
       "http://" + site.ip + ":8081/domainedit",
       {
@@ -548,6 +543,7 @@ async function deleteDomain(req, res) {
         },
       }
     );
+    console.timeEnd("delete");
     await mongodb
       .get()
       .db("hosting")
@@ -572,15 +568,14 @@ async function changeRoute(req, res) {
       .toArray();
     let mainSite;
     let found;
-    console.log(sites);
+
     for (site of sites) {
       if (site.siteId == siteid) {
-        console.log(site);
         mainSite = site;
         break;
       }
     }
-    console.log(mainSite);
+
     if (mainSite == undefined) {
       res.json({ error: "site not found" });
       return;
@@ -598,17 +593,11 @@ async function changeRoute(req, res) {
     if (!found) {
       for (alias of mainSite.domain.alias) {
         if (alias.url === data.url) {
-          if (!alias.subDomain) {
-            alias.routing = data.type;
-            break;
-          } else {
-            res.json({ error: "Subdomain not allowed" });
-            return;
-          }
+          res.json({ error: "Routing not allowed for Alias Domain" });
         }
       }
     }
-    
+
     siteJSON = addJSON(sites);
     await axios.post(
       "http://" + mainSite.ip + ":8081/domainedit",
@@ -646,7 +635,7 @@ async function changeWildcard(req, res) {
       .toArray();
     let mainSite;
     let found;
-    console.log(sites, siteid);
+
     for (site of sites) {
       if (site.siteId == siteid) {
         mainSite = site;
@@ -729,27 +718,79 @@ async function changePrimary(req, res) {
     mainSite.domain.primary = mainSite.domain.alias.find((ali) => {
       if (ali.url == data.url) return ali;
     });
-    console.log('main find',mainSite.domain.alias);
+
     mainSite.domain.alias = mainSite.domain.alias.filter(
       (ali) => ali.url != data.url
     );
 
-    console.log("main filter",mainSite.domain.alias);
     mainSite.domain.alias.push(tempSite);
-    for(site of sites){
-      if(site.siteId == siteid){
-        site = mainSite
+    for (site of sites) {
+      if (site.siteId == siteid) {
+        site = mainSite;
       }
     }
-    siteJSON = addJSON(sites)
+    siteJSON = addJSON(sites);
+    console.time("change");
     await axios.post(
       "http://" + mainSite.ip + ":8081/changeprimary",
       {
         name: mainSite.name,
         sites: siteJSON,
-        mainUrl:data.url,
-        aliasUrl:tempSite.url,
-        user:mainSite.user
+        mainUrl: data.url,
+        aliasUrl: tempSite.url,
+        user: mainSite.user,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.timeEnd("change");
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne({ siteId: siteid }, { $set: { domain: mainSite.domain } });
+    res.json({});
+  } catch (error) {
+    console.log(error);
+    res.json({ error: error });
+  }
+}
+
+async function changePHP(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  let mainSite;
+  try {
+    sites = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ serverId: data.serverid })
+      .toArray();
+    for (site of sites) {
+      if (site.siteId == siteid) {
+        mainSite = site;
+        break;
+      }
+    }
+    if (mainSite == undefined) {
+      res.json({ error: "site not found" });
+      return;
+    }
+    currentphp = mainSite.php;
+    mainSite.php = data.php;
+
+    siteJSON = addJSON(sites);
+    await axios.post(
+      "http://" + mainSite.ip + ":8081/changePHP",
+      {
+        name: mainSite.name,
+        sites: siteJSON,
+        oldphp: currentphp,
+        newphp: data.php,
       },
       {
         headers: {
@@ -761,12 +802,102 @@ async function changePrimary(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .updateOne({ siteId: siteid }, { $set: { domain: mainSite.domain } });
-      res.json({})
+      .updateOne({ siteId: siteid }, { $set: { php: mainSite.php } });
+    res.json({});
   } catch (error) {
     console.log(error);
     res.json({ error: error });
   }
+}
+
+async function getPHPini(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+
+  try {
+    sites = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    site = sites[0];
+    if (!site) {
+      res.json({ error: "site not found" });
+    }
+
+    result = await axios.get(
+      "http://" + site.ip + ":8081/getPHPini/" + site.name,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log(result.data);
+    phpIni = parseIntFromObj(result.data);
+    res.json(phpIni);
+  } catch (error) {
+    console.log(error);
+    res.json({ error: error });
+  }
+}
+
+async function updatePHPini(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  let php = {};
+  try {
+    sites = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    site = sites[0];
+    if (!site) {
+      res.json({ error: "site not found" });
+    }
+    php.MaxExecutionTime = String(data.php.MaxExecutionTime);
+    php.MaxFileUploads = String(data.php.MaxFileUploads);
+    php.MaxInputTime = String(data.php.MaxInputTime);
+    php.MaxInputVars = String(data.php.MaxInputVars);
+    php.MemoryLimit = String(data.php.MemoryLimit) + "M";
+    php.PostMaxSize = String(data.php.PostMaxSize) + "M";
+    php.SessionCookieLifetime = String(data.php.SessionCookieLifetime);
+    php.SessionGcMaxLifetime = String(data.php.SessionGcMaxlifetime);
+    php.ShortOpenTag = String(data.php.ShortOpenTag);
+    php.UploadMaxFilesize = String(data.php.UploadMaxFilesize) + "M";
+    await axios.post(
+      "http://" + site.ip + ":8081/updatePHPini/" + site.name,
+      JSON.stringify(php),
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.json({});
+  } catch (error) {
+    console.log(error);
+    res.json({ error: error });
+  }
+}
+
+async function getBackup(req, res) {
+  siteid = req.params.siteid;
+  try {
+    backup = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .project({ backup: 1 })
+      .toArray();
+    backup = backup[0];
+    res.json(backup.backup);
+  } catch (error) {}
 }
 
 module.exports = {
@@ -778,14 +909,18 @@ module.exports = {
   deleteDomain,
   changeRoute,
   changeWildcard,
-  changePrimary
+  changePrimary,
+  changePHP,
+  getPHPini,
+  updatePHPini,
+  getBackup,
 };
 
 function addJSON(sites) {
   result = [];
   for (let site of sites) {
     let aliasDomain = [];
-    console.log("Inside function", site);
+
     for (domain of site.domain.alias) {
       aliasDomain.push({
         url: domain.url,
@@ -809,4 +944,13 @@ function addJSON(sites) {
     });
   }
   return result;
+}
+
+function parseIntFromObj(obj) {
+  Object.keys(obj).forEach((key) => {
+    if (key != "ShortOpenTag") {
+      obj[key] = parseInt(obj[key]);
+    }
+  });
+  return obj;
 }

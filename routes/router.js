@@ -89,7 +89,23 @@ router.post("/site/:siteid/wildcard", (req, res) => {
   sites.changeWildcard(req, res);
 });
 
-router.post("/site/:siteid/changePrimary",(req,res)=>{
-  sites.changePrimary(req,res)
-})
+router.post("/site/:siteid/changePrimary", (req, res) => {
+  sites.changePrimary(req, res);
+});
+
+router.post("/site/:siteid/changePHP", (req, res) => {
+  sites.changePHP(req, res);
+});
+
+router.get("/site/:siteid/getPHPini", (req, res) => {
+  sites.getPHPini(req, res);
+});
+
+router.post("/site/:siteid/updatePhpIni", (req, res) => {
+  sites.updatePHPini(req, res);
+});
+
+router.get("/site/:siteid/getbackup", (req, res) => {
+  sites.getBackup(req, res);
+});
 module.exports = router;
