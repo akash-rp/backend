@@ -2,7 +2,8 @@ const mongodb = require("../db/mongo");
 const { customAlphabet } = require("nanoid");
 const { default: axios } = require("axios");
 const { parseDomain, fromUrl } = require("parse-domain");
-const { json } = require("express");
+const { json, response } = require("express");
+const config = require("../db/config");
 const nanoid = customAlphabet(
   "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   12
@@ -45,7 +46,6 @@ async function addSite(req, res) {
       .db("hosting")
       .collection("sites")
       .find({ serverId: serverid })
-      .project({ domain: 1, siteId: 1, name: 1 })
       .toArray();
     const data = req.body;
     let url = data.url;
@@ -170,31 +170,6 @@ async function addSite(req, res) {
         }
       }
     }
-    let siteJSON = [];
-    for (let site of sites) {
-      let aliasDomain = [];
-      for (let domain in site.domain.alias) {
-        aliasDomain.push({
-          url: domain.url,
-          subDomain: domain.subDomain,
-          ssl: domain.ssl,
-          wildcard: domain.wildcard,
-          routing: domain.routing,
-        });
-      }
-      siteJSON.push({
-        name: site.name,
-        primaryDomain: {
-          url: site.domain.primary.url,
-          subDomain: site.domain.primary.subDomain,
-          ssl: site.domain.primary.ssl,
-          wildcard: site.domain.primary.wildcard,
-          routing: site.domain.primary.routing,
-        },
-        aliasDomain: aliasDomain,
-        exclude: site.domain.exclude,
-      });
-    }
     await axios.post(
       "http://" + result.ip + ":8081/wp/add",
       {
@@ -207,8 +182,6 @@ async function addSite(req, res) {
         adminEmail: data.adminEmail,
         subDomain: isSubDomain,
         routing: routing,
-        sites: siteJSON,
-        exclude: exclude,
       },
       {
         headers: {
@@ -300,7 +273,7 @@ async function addDomainToSite(req, res) {
     const serverid = data.id;
     let url;
     let isSubDomain = false;
-    let baseUrl;
+    let baseUrl = "";
     let routing = "none";
     let mainSite;
     let sites = await mongodb
@@ -310,7 +283,6 @@ async function addDomainToSite(req, res) {
       .find({ serverId: serverid })
       .toArray();
 
-    let exclude = [];
     ip = sites[0].ip;
     sites.forEach((site) => {
       if (site.siteId == siteid) {
@@ -354,32 +326,32 @@ async function addDomainToSite(req, res) {
         });
         return;
       }
-      if (site.domain.primary.subDomain) {
-        if (site.domain.primary.baseurl === url) {
-          if (site.siteId !== siteid) {
-            if (!mainSite.domain.exclude.includes(site.domain.primary.url)) {
-              mainSite.domain.exclude.push(site.domain.primary.url);
-            }
-            if (!site.domain.exclude.includes(url)) {
-              site.domain.exclude.push(url);
-              site.domain.exclude.push("www." + url);
-            }
-          }
-        }
-      }
-      if (isSubDomain) {
-        if (site.domain.primary.url === baseUrl) {
-          if (site.siteId !== siteid) {
-            if (!site.domain.exclude.includes(url)) {
-              site.domain.exclude.push(url);
-            }
-            if (!mainSite.domain.exclude.includes(site.domain.primary.url)) {
-              mainSite.domain.exclude.push(site.domain.primary.url);
-              mainSite.domain.exclude.push("www." + site.domain.primary.url);
-            }
-          }
-        }
-      }
+      // if (site.domain.primary.subDomain) {
+      //   if (site.domain.primary.baseurl === url) {
+      //     if (site.siteId !== siteid) {
+      //       if (!mainSite.domain.exclude.includes(site.domain.primary.url)) {
+      //         mainSite.domain.exclude.push(site.domain.primary.url);
+      //       }
+      //       if (!site.domain.exclude.includes(url)) {
+      //         site.domain.exclude.push(url);
+      //         site.domain.exclude.push("www." + url);
+      //       }
+      //     }
+      //   }
+      // }
+      // if (isSubDomain) {
+      //   if (site.domain.primary.url === baseUrl) {
+      //     if (site.siteId !== siteid) {
+      //       if (!site.domain.exclude.includes(url)) {
+      //         site.domain.exclude.push(url);
+      //       }
+      //       if (!mainSite.domain.exclude.includes(site.domain.primary.url)) {
+      //         mainSite.domain.exclude.push(site.domain.primary.url);
+      //         mainSite.domain.exclude.push("www." + site.domain.primary.url);
+      //       }
+      //     }
+      //   }
+      // }
       /*########################################################################################### 
             Alias For loop    
     ##############################################################################################*/
@@ -390,30 +362,30 @@ async function addDomainToSite(req, res) {
           });
           return;
         }
-        if (domain.subDomain) {
-          if (domain.baseurl === url) {
-            if (site.siteId !== siteid) {
-              mainSite.domain.exclude.push(domain.url);
-              if (!site.domain.exclude.includes(url)) {
-                site.domain.exclude.push(url);
-                site.domain.exclude.push("www." + url);
-              }
-            }
-          }
-        }
-        if (isSubDomain) {
-          if (domain.url === baseUrl) {
-            if (site.siteId !== siteid) {
-              if (!site.domain.exclude.includes(url)) {
-                site.domain.exclude.push(url);
-              }
-              if (!mainSite.domain.exclude.includes(domain.url)) {
-                mainSite.domain.exclude.push(domain.url);
-                mainSite.domain.exclude.push("www." + domain.url);
-              }
-            }
-          }
-        }
+        // if (domain.subDomain) {
+        //   if (domain.baseurl === url) {
+        //     if (site.siteId !== siteid) {
+        //       mainSite.domain.exclude.push(domain.url);
+        //       if (!site.domain.exclude.includes(url)) {
+        //         site.domain.exclude.push(url);
+        //         site.domain.exclude.push("www." + url);
+        //       }
+        //     }
+        //   }
+        // }
+        // if (isSubDomain) {
+        //   if (domain.url === baseUrl) {
+        //     if (site.siteId !== siteid) {
+        //       if (!site.domain.exclude.includes(url)) {
+        //         site.domain.exclude.push(url);
+        //       }
+        //       if (!mainSite.domain.exclude.includes(domain.url)) {
+        //         mainSite.domain.exclude.push(domain.url);
+        //         mainSite.domain.exclude.push("www." + domain.url);
+        //       }
+        //     }
+        //   }
+        // }
       }
       /*########################################################################################### 
             Redirect for loop  
@@ -425,30 +397,30 @@ async function addDomainToSite(req, res) {
           });
           return;
         }
-        if (domain.subDomain) {
-          if (domain.baseurl === url) {
-            if (site.siteId !== siteid) {
-              mainSite.domain.exclude.push(domain.url);
-              if (!site.domain.exclude.includes(url)) {
-                site.domain.exclude.push(url);
-                site.domain.exclude.push("www." + url);
-              }
-            }
-          }
-        }
-        if (isSubDomain) {
-          if (domain.url === baseUrl) {
-            if (site.siteId !== siteid) {
-              if (!site.domain.exclude.includes(url)) {
-                site.domain.exclude.push(url);
-              }
-              if (!mainSite.domain.exclude.includes(domain.url)) {
-                mainSite.domain.exclude.push(domain.url);
-                mainSite.domain.exclude.push("www." + domain.url);
-              }
-            }
-          }
-        }
+        // if (domain.subDomain) {
+        //   if (domain.baseurl === url) {
+        //     if (site.siteId !== siteid) {
+        //       mainSite.domain.exclude.push(domain.url);
+        //       if (!site.domain.exclude.includes(url)) {
+        //         site.domain.exclude.push(url);
+        //         site.domain.exclude.push("www." + url);
+        //       }
+        //     }
+        //   }
+        // }
+        // if (isSubDomain) {
+        //   if (domain.url === baseUrl) {
+        //     if (site.siteId !== siteid) {
+        //       if (!site.domain.exclude.includes(url)) {
+        //         site.domain.exclude.push(url);
+        //       }
+        //       if (!mainSite.domain.exclude.includes(domain.url)) {
+        //         mainSite.domain.exclude.push(domain.url);
+        //         mainSite.domain.exclude.push("www." + domain.url);
+        //       }
+        //     }
+        //   }
+        // }
       }
     }
     sites.forEach((site) => {
@@ -463,15 +435,20 @@ async function addDomainToSite(req, res) {
             baseurl: baseUrl,
           });
         }
-        site.domain.exclude = mainSite.domain.exclude;
+        // site.domain.exclude = mainSite.domain.exclude;
       }
     });
-    let siteJSON = addJSON(sites);
-    console.time("axios");
+    let app;
+    for (let site of sites) {
+      if (site.siteId == siteid) {
+        app = site;
+      }
+    }
+    let siteJSON = addSingleJSON(app);
     await axios.post(
       "http://" + ip + ":8081/domainedit",
       {
-        sites: siteJSON,
+        site: siteJSON,
         name: mainSite.name,
       },
       {
@@ -480,7 +457,7 @@ async function addDomainToSite(req, res) {
         },
       }
     );
-    console.timeEnd("axios");
+    // console.timeEnd("axios");
     for (let site of sites) {
       await mongodb
         .get()
@@ -524,18 +501,14 @@ async function deleteDomain(req, res) {
         return ali;
       }
     });
-    for (site of sites) {
-      if (site.siteId === siteid) {
-        site = mainSite;
-      }
-    }
-    siteJSON = addJSON(sites);
+
+    siteJSON = addSingleJSON(mainSite);
     console.time("delete");
     await axios.post(
-      "http://" + site.ip + ":8081/domainedit",
+      "http://" + mainSite.ip + ":8081/domainedit",
       {
         name: mainSite.name,
-        sites: siteJSON,
+        site: siteJSON,
       },
       {
         headers: {
@@ -594,16 +567,17 @@ async function changeRoute(req, res) {
       for (alias of mainSite.domain.alias) {
         if (alias.url === data.url) {
           res.json({ error: "Routing not allowed for Alias Domain" });
+          return;
         }
       }
     }
 
-    siteJSON = addJSON(sites);
+    siteJSON = addSingleJSON(mainSite);
     await axios.post(
       "http://" + mainSite.ip + ":8081/domainedit",
       {
         name: mainSite.name,
-        sites: siteJSON,
+        site: siteJSON,
       },
       {
         headers: {
@@ -668,12 +642,13 @@ async function changeWildcard(req, res) {
         }
       }
     }
-    siteJSON = addJSON(sites);
+    siteJSON = addSingleJSON(mainSite);
+    console.log(siteJSON);
     await axios.post(
       "http://" + mainSite.ip + ":8081/domainedit",
       {
         name: mainSite.name,
-        sites: siteJSON,
+        site: siteJSON,
       },
       {
         headers: {
@@ -729,13 +704,10 @@ async function changePrimary(req, res) {
         site = mainSite;
       }
     }
-    siteJSON = addJSON(sites);
-    console.time("change");
     await axios.post(
       "http://" + mainSite.ip + ":8081/changeprimary",
       {
         name: mainSite.name,
-        sites: siteJSON,
         mainUrl: data.url,
         aliasUrl: tempSite.url,
         user: mainSite.user,
@@ -746,7 +718,6 @@ async function changePrimary(req, res) {
         },
       }
     );
-    console.timeEnd("change");
     await mongodb
       .get()
       .db("hosting")
@@ -783,12 +754,10 @@ async function changePHP(req, res) {
     currentphp = mainSite.php;
     mainSite.php = data.php;
 
-    siteJSON = addJSON(sites);
     await axios.post(
       "http://" + mainSite.ip + ":8081/changePHP",
       {
         name: mainSite.name,
-        sites: siteJSON,
         oldphp: currentphp,
         newphp: data.php,
       },
@@ -900,6 +869,175 @@ async function getBackup(req, res) {
   } catch (error) {}
 }
 
+async function updateLocalBackup(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  if (data.backup.automatic) {
+    try {
+      sites = await mongodb
+        .get()
+        .db("hosting")
+        .collection("sites")
+        .find({ siteId: siteid })
+        .project({ name: 1, user: 1, ip: 1 })
+        .toArray();
+      site = sites[0];
+      await axios.post(
+        "http://" +
+          site.ip +
+          ":8081" +
+          "/localbackup/" +
+          data.type +
+          "/" +
+          site.name +
+          "/" +
+          site.user,
+        JSON.stringify({
+          ...data.backup,
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      await mongodb
+        .get()
+        .db("hosting")
+        .collection("sites")
+        .updateOne({ siteId: siteid }, { $set: { localbackup: data.backup } });
+
+      res.json({});
+    } catch (error) {
+      console.log("error");
+      console.log(error);
+      console.log(error.toJSON());
+      res.status(404).json({ error: "Something went wrong" });
+    }
+  } else {
+    res.json({ data: "Nothing to change" });
+  }
+}
+
+async function takeLocalBackup(req, res) {
+  siteid = req.params.siteid;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ siteId: siteid });
+    console.log(site);
+    if (!site.localbackup.ondemand) {
+      type = "new";
+    } else {
+      type = "existing";
+    }
+    await axios.get(
+      "http://" +
+        site.ip +
+        ":8081" +
+        "/takelocalbackup/" +
+        type +
+        "/" +
+        site.name +
+        "/" +
+        site.user,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    if (!site.localbackup.ondemand) {
+      site.localbackup.ondemand = true;
+      await mongodb
+        .get()
+        .db("hosting")
+        .collection("sites")
+        .updateOne(
+          { siteId: siteid },
+          { $set: { localbackup: site.localbackup } }
+        );
+    }
+    res.json("");
+  } catch (error) {
+    console.log(error);
+    res.status(404).json("");
+  }
+}
+
+async function getLocalBackupList(req, res) {
+  siteid = req.params.siteid;
+  mode = req.params.mode;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    site = site[0];
+
+    result = await axios.get(
+      "http://" +
+        site.ip +
+        ":8081/localbackup/list/" +
+        site.name +
+        "/" +
+        site.user +
+        "/" +
+        mode,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    res.json(result.data);
+  } catch (error) {
+    console.log(error);
+    res.status(404).json({ error: "Cannot get backup list" });
+  }
+}
+
+async function restoreLocalBackup(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    site = site[0];
+    await axios.get(
+      "http://" +
+        site.ip +
+        ":8081/restorelocalbackup/" +
+        site.name +
+        "/" +
+        site.user +
+        "/" +
+        data.restore.mode +
+        "/" +
+        data.restore.id +
+        "/" +
+        data.restore.type,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    res.json("Success");
+  } catch (error) {
+    console.log(error);
+    res.json({ error: "Cannot restore backup" });
+  }
+}
+
 module.exports = {
   getSiteSummary,
   addSite,
@@ -914,6 +1052,10 @@ module.exports = {
   getPHPini,
   updatePHPini,
   getBackup,
+  updateLocalBackup,
+  takeLocalBackup,
+  getLocalBackupList,
+  restoreLocalBackup,
 };
 
 function addJSON(sites) {
@@ -932,6 +1074,7 @@ function addJSON(sites) {
     }
     result.push({
       name: site.name,
+      user: site.user,
       primaryDomain: {
         url: site.domain.primary.url,
         subDomain: site.domain.primary.subDomain,
@@ -940,9 +1083,38 @@ function addJSON(sites) {
         routing: site.domain.primary.routing,
       },
       aliasDomain: aliasDomain,
-      exclude: site.domain.exclude,
+      localBackup: site.localbackup,
     });
   }
+  return result;
+}
+
+function addSingleJSON(site) {
+  let aliasDomain = [];
+
+  for (domain of site.domain.alias) {
+    aliasDomain.push({
+      url: domain.url,
+      subDomain: domain.subDomain,
+      ssl: domain.ssl,
+      wildcard: domain.wildcard,
+      routing: domain.routing,
+    });
+  }
+  result = {
+    name: site.name,
+    user: site.user,
+    primaryDomain: {
+      url: site.domain.primary.url,
+      subDomain: site.domain.primary.subDomain,
+      ssl: site.domain.primary.ssl,
+      wildcard: site.domain.primary.wildcard,
+      routing: site.domain.primary.routing,
+    },
+    aliasDomain: aliasDomain,
+    localBackup: site.localbackup,
+  };
+
   return result;
 }
 

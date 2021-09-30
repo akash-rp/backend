@@ -105,7 +105,19 @@ router.post("/site/:siteid/updatePhpIni", (req, res) => {
   sites.updatePHPini(req, res);
 });
 
-router.get("/site/:siteid/getbackup", (req, res) => {
-  sites.getBackup(req, res);
+router.post("/site/:siteid/updatelocalbackup", (req, res) => {
+  sites.updateLocalBackup(req, res);
+});
+
+router.get("/site/:siteid/takelocalbackup", (req, res) => {
+  sites.takeLocalBackup(req, res);
+});
+
+router.get("/site/:siteid/localbackuplist/:mode", (req, res) => {
+  sites.getLocalBackupList(req, res);
+});
+
+router.post("/site/:siteid/restorelocalbackup", (req, res) => {
+  sites.restoreLocalBackup(req, res);
 });
 module.exports = router;
