@@ -7,7 +7,6 @@ const router = express.Router();
 const users = require("./users");
 const servers = require("./servers");
 const sites = require("./sites");
-const ssh = require("./ssh");
 const db = require("../db/mongo");
 
 const { customAlphabet } = require("nanoid");
@@ -43,10 +42,6 @@ router.post("/servers", (req, res) => {
 
 router.post("/userdetails", (req, res) => {
   users.userdetails(req, res);
-});
-
-router.get("/ssh", (req, res) => {
-  ssh.conn(req, res);
 });
 
 router.post("/addserver", (req, res) => {
@@ -109,8 +104,8 @@ router.post("/site/:siteid/updatelocalbackup", (req, res) => {
   sites.updateLocalBackup(req, res);
 });
 
-router.get("/site/:siteid/takelocalbackup", (req, res) => {
-  sites.takeLocalBackup(req, res);
+router.get("/site/:siteid/localondemandbackup", (req, res) => {
+  sites.takeLocalOndemandBackup(req, res);
 });
 
 router.get("/site/:siteid/localbackuplist/:mode", (req, res) => {
@@ -119,5 +114,20 @@ router.get("/site/:siteid/localbackuplist/:mode", (req, res) => {
 
 router.post("/site/:siteid/restorelocalbackup", (req, res) => {
   sites.restoreLocalBackup(req, res);
+});
+
+router.post("/site/:siteid/createstaging", (req, res) => {
+  sites.createStaging(req, res);
+});
+
+router.get("/site/:siteid/getdbtables", (req, res) => {
+  sites.getDatabaseTables(req, res);
+});
+
+router.post("/site/:siteid/push", (req, res) => {
+  sites.pushSite(req, res);
+});
+router.get("/asdf", (req, res) => {
+  res.redirect("/servers");
 });
 module.exports = router;

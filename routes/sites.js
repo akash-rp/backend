@@ -1,13 +1,7 @@
 const mongodb = require("../db/mongo");
-const { customAlphabet } = require("nanoid");
 const { default: axios } = require("axios");
 const { parseDomain, fromUrl } = require("parse-domain");
-const { json, response } = require("express");
-const config = require("../db/config");
-const nanoid = customAlphabet(
-  "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-  12
-);
+const { v4: uuidv4 } = require("uuid");
 
 async function getSiteSummary(req, res) {
   try {
@@ -51,32 +45,31 @@ async function addSite(req, res) {
     let url = data.url;
     const { subDomains, domain, topLevelDomains } = parseDomain(fromUrl(url));
     let isSubDomain = false;
-    let routing = "none";
-    let baseUrl = "";
-    let exclude = [];
+    // let routing = "none";
 
     // Remove www from the domain is present only on level 1 subdomain
+    // if (subDomains && subDomains.length > 0) {
+    //   if (subDomains.length == 1) {
+    //     if (subDomains[0] === "www") {
+    //       url = "www." + domain + "." + topLevelDomains.join(".");
+    //     } else {
+    //       isSubDomain = true;
+    //       url = subDomains[0] + "." + domain + "." + topLevelDomains.join(".");
+    //     }
+    //   } else {
+    //     isSubDomain = true;
+    //     url =
+    //       subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
+    //   }
+    // } else {
+    //   url = domain + "." + topLevelDomains.join(".");
+    // }
     if (subDomains && subDomains.length > 0) {
-      if (subDomains.length == 1) {
-        if (subDomains[0] === "www") {
-          url = domain + "." + topLevelDomains.join(".");
-          routing = "www";
-        } else {
-          isSubDomain = true;
-          url = subDomains[0] + "." + domain + "." + topLevelDomains.join(".");
-        }
-      } else {
-        isSubDomain = true;
-        url =
-          subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
-      }
+      url =
+        subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
     } else {
       url = domain + "." + topLevelDomains.join(".");
     }
-    if (isSubDomain) {
-      baseUrl = domain + "." + topLevelDomains.join(".");
-    }
-
     // Check for same domain across all app and also on wildcard domain
     for (let site of sites) {
       if (site.domain.primary.url === url) {
@@ -86,57 +79,12 @@ async function addSite(req, res) {
         return;
       }
 
-      if (site.domain.primary.subDomain) {
-        if (site.domain.primary.baseurl === url) {
-          if (!exclude.includes(site.domain.primary.url)) {
-            exclude.push(site.domain.primary.url);
-          }
-          if (!site.domain.exclude.includes(url)) {
-            site.domain.exclude.push(url);
-            site.domain.exclude.push("www." + url);
-          }
-        }
-      }
-      if (isSubDomain) {
-        if (site.domain.primary.url === baseUrl) {
-          if (!site.domain.exclude.includes(url)) {
-            site.domain.exclude.push(url);
-          }
-          if (!exclude.includes(site.domain.primary.url)) {
-            exclude.push(site.domain.primary.url);
-            exclude.push("www." + site.domain.primary.url);
-          }
-        }
-      }
       for (let domain of site.domain.alias) {
         if (domain.url === url) {
           res.json({
             error: "This url is being used by other site",
           });
           return;
-        }
-
-        if (domain.subDomain) {
-          if (domain.baseurl === url) {
-            if (!exclude.includes(domain.url)) {
-              exclude.push(domain.url);
-            }
-            if (!site.domain.exclude.includes(url)) {
-              site.domain.exclude.push(url);
-              site.domain.exclude.push("www." + url);
-            }
-          }
-        }
-        if (isSubDomain) {
-          if (domain.url === baseUrl) {
-            if (!site.domain.exclude.includes(url)) {
-              site.domain.exclude.push(url);
-            }
-            if (!exclude.includes(domain.url)) {
-              exclude.push(domain.url);
-              exclude.push("www." + domain.url);
-            }
-          }
         }
       }
       for (let domain of site.domain.redirect) {
@@ -145,28 +93,6 @@ async function addSite(req, res) {
             error: "This url is being used by other site",
           });
           return;
-        }
-        if (domain.subDomain) {
-          if (domain.baseurl === url) {
-            if (!exclude.includes(domain.url)) {
-              exclude.push(domain.url);
-            }
-            if (!site.domain.exclude.includes(url)) {
-              site.domain.exclude.push(url);
-              site.domain.exclude.push("www." + url);
-            }
-          }
-        }
-        if (isSubDomain) {
-          if (domain.url === baseUrl) {
-            if (!site.domain.exclude.includes(url)) {
-              site.domain.exclude.push(url);
-            }
-            if (!exclude.includes(domain.url)) {
-              exclude.push(domain.url);
-              exclude.push("www." + domain.url);
-            }
-          }
         }
       }
     }
@@ -181,7 +107,6 @@ async function addSite(req, res) {
         adminPassword: data.adminPassword,
         adminEmail: data.adminEmail,
         subDomain: isSubDomain,
-        routing: routing,
       },
       {
         headers: {
@@ -189,7 +114,7 @@ async function addSite(req, res) {
         },
       }
     );
-    id = nanoid();
+    id = uuidv4();
     const doc = {
       siteId: id,
       user: data.userName,
@@ -202,22 +127,28 @@ async function addSite(req, res) {
           url: data.url,
           ssl: false,
           wildcard: false,
-          routing: routing,
-          subDomain: isSubDomain,
-          baseurl: baseUrl,
         },
         alias: [],
         redirect: [],
-        exclude: exclude,
       },
+      localbackup: {
+        automatic: false,
+        frequency: "Daily",
+        time: {
+          hour: "00",
+          minute: "00",
+          weekday: "Sunday",
+          monthday: "00",
+        },
+        retention: {
+          time: 1,
+          type: "Day",
+        },
+        created: false,
+      },
+      staging: [],
+      type: "live",
     };
-    for (let site of sites) {
-      await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .updateOne({ siteId: site.siteId }, { $set: { domain: site.domain } });
-    }
 
     await mongodb.get().db("hosting").collection("sites").insertOne(doc);
     result = await mongodb
@@ -273,9 +204,9 @@ async function addDomainToSite(req, res) {
     const serverid = data.id;
     let url;
     let isSubDomain = false;
-    let baseUrl = "";
-    let routing = "none";
+    // let routing = "none";
     let mainSite;
+    // isWWW = false;
     let sites = await mongodb
       .get()
       .db("hosting")
@@ -297,27 +228,28 @@ async function addDomainToSite(req, res) {
     const { subDomains, domain, topLevelDomains } = parseDomain(
       fromUrl(data.url)
     );
+    // if (subDomains && subDomains.length > 0) {
+    //   if (subDomains.length == 1) {
+    //     if (subDomains[0] === "www") {
+    //       url = domain + "." + topLevelDomains.join(".");
+    //     } else {
+    //       isSubDomain = true;
+    //       url = subDomains[0] + "." + domain + "." + topLevelDomains.join(".");
+    //     }
+    //   } else {
+    //     isSubDomain = true;
+    //     url =
+    //       subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
+    //   }
+    // } else {
+    //   url = domain + "." + topLevelDomains.join(".");
+    // }
     if (subDomains && subDomains.length > 0) {
-      if (subDomains.length == 1) {
-        if (subDomains[0] === "www") {
-          url = domain + "." + topLevelDomains.join(".");
-          routing = "www";
-        } else {
-          isSubDomain = true;
-          url = subDomains[0] + "." + domain + "." + topLevelDomains.join(".");
-        }
-      } else {
-        isSubDomain = true;
-        url =
-          subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
-      }
+      url =
+        subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
     } else {
       url = domain + "." + topLevelDomains.join(".");
     }
-    if (isSubDomain) {
-      baseUrl = domain + "." + topLevelDomains.join(".");
-    }
-
     // Check for same domain across all app and also on wildcard domain
     for (let site of sites) {
       if (site.domain.primary.url === url) {
@@ -428,11 +360,8 @@ async function addDomainToSite(req, res) {
         if (data.type == "alias") {
           site.domain.alias.push({
             url: url,
-            subDomain: isSubDomain,
-            routing: routing,
             ssl: false,
             wildcard: false,
-            baseurl: baseUrl,
           });
         }
         // site.domain.exclude = mainSite.domain.exclude;
@@ -872,54 +801,54 @@ async function getBackup(req, res) {
 async function updateLocalBackup(req, res) {
   siteid = req.params.siteid;
   data = req.body;
-  if (data.backup.automatic) {
-    try {
-      sites = await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .find({ siteId: siteid })
-        .project({ name: 1, user: 1, ip: 1 })
-        .toArray();
-      site = sites[0];
-      await axios.post(
-        "http://" +
-          site.ip +
-          ":8081" +
-          "/localbackup/" +
-          data.type +
-          "/" +
-          site.name +
-          "/" +
-          site.user,
-        JSON.stringify({
-          ...data.backup,
-        }),
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .updateOne({ siteId: siteid }, { $set: { localbackup: data.backup } });
 
-      res.json({});
-    } catch (error) {
-      console.log("error");
-      console.log(error);
-      console.log(error.toJSON());
-      res.status(404).json({ error: "Something went wrong" });
+  try {
+    sites = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .project({ name: 1, user: 1, ip: 1 })
+      .toArray();
+    site = sites[0];
+    await axios.post(
+      "http://" +
+        site.ip +
+        ":8081" +
+        "/localbackup/" +
+        data.type +
+        "/" +
+        site.name +
+        "/" +
+        site.user,
+      JSON.stringify({
+        ...data.backup,
+      }),
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    if (data.type == "enable") {
+      data.backup.created = true;
     }
-  } else {
-    res.json({ data: "Nothing to change" });
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne({ siteId: siteid }, { $set: { localbackup: data.backup } });
+
+    res.json({});
+  } catch (error) {
+    console.log("error");
+    console.log(error);
+    console.log(error.toJSON());
+    res.status(404).json({ error: "Something went wrong" });
   }
 }
 
-async function takeLocalBackup(req, res) {
+async function takeLocalOndemandBackup(req, res) {
   siteid = req.params.siteid;
   try {
     site = await mongodb
@@ -937,7 +866,7 @@ async function takeLocalBackup(req, res) {
       "http://" +
         site.ip +
         ":8081" +
-        "/takelocalbackup/" +
+        "/takelocalondemandbackup/" +
         type +
         "/" +
         site.name +
@@ -1038,6 +967,150 @@ async function restoreLocalBackup(req, res) {
   }
 }
 
+async function createStaging(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  try {
+    id = uuidv4();
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    site = site[0];
+    if (!site.localbackup.ondemand) {
+      type = "new";
+    } else {
+      type = "existing";
+    }
+    await axios.get(
+      "http://" +
+        site.ip +
+        ":8081/createstaging/" +
+        site.name +
+        "/" +
+        site.user +
+        "/" +
+        type +
+        "/" +
+        data.url +
+        "/" +
+        site.domain.primary.url,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    site.localbackup.ondemand = true;
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne(
+        { siteId: siteid },
+        { $set: { localbackup: site.localbackup } },
+        { $push: { staging: id } }
+      );
+    const doc = {
+      siteId: id,
+      user: site.user,
+      serverId: site.serverId,
+      name: site.name + "_Staging",
+      php: "lsphp74",
+      ip: site.ip,
+      domain: {
+        primary: {
+          url: data.url,
+          ssl: false,
+          wildcard: false,
+        },
+        alias: [],
+        redirect: [],
+      },
+      localbackup: {
+        automatic: false,
+        frequency: "Daily",
+        time: {
+          hour: "00",
+          minute: "00",
+          weekday: "Sunday",
+          monthday: "00",
+        },
+        retention: {
+          time: 1,
+          type: "Day",
+        },
+        created: false,
+        type: "staging",
+      },
+    };
+    await mongodb.get().db("hosting").collection("sites").insertOne(doc);
+
+    return res.json({ error: null });
+  } catch (error) {
+    console.log(error);
+    return res.json({ error: "Cannot create staging site" });
+  }
+}
+
+async function getDatabaseTables(req, res) {
+  const siteid = req.params.siteid;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    site = site[0];
+    result = await axios.get(
+      "http://" + site.ip + ":8081/getdbtables/" + site.name + "/" + site.user,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    res.json(result.data);
+  } catch (error) {
+    console.log(error);
+    res.json({ error: "Something went wrong" });
+  }
+}
+
+async function pushSite(req, res) {
+  const siteid = req.params.siteid;
+  console.log(siteid);
+  try {
+    fromSite = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ siteId: siteid })
+      .toArray();
+    console.log();
+    fromSite = fromSite[0];
+    console.log(fromSite);
+    toSite = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({
+        siteId:
+          fromSite.type == "live" ? fromSite.stagingId : fromSite.livesiteId,
+      })
+      .toArray();
+    toSite = toSite[0];
+    console.log(toSite);
+    res.json(toSite);
+  } catch (error) {
+    console.log(error);
+  }
+}
+
 module.exports = {
   getSiteSummary,
   addSite,
@@ -1053,9 +1126,12 @@ module.exports = {
   updatePHPini,
   getBackup,
   updateLocalBackup,
-  takeLocalBackup,
+  takeLocalOndemandBackup,
   getLocalBackupList,
   restoreLocalBackup,
+  createStaging,
+  getDatabaseTables,
+  pushSite,
 };
 
 function addJSON(sites) {
@@ -1066,10 +1142,8 @@ function addJSON(sites) {
     for (domain of site.domain.alias) {
       aliasDomain.push({
         url: domain.url,
-        subDomain: domain.subDomain,
         ssl: domain.ssl,
         wildcard: domain.wildcard,
-        routing: domain.routing,
       });
     }
     result.push({
@@ -1077,10 +1151,8 @@ function addJSON(sites) {
       user: site.user,
       primaryDomain: {
         url: site.domain.primary.url,
-        subDomain: site.domain.primary.subDomain,
         ssl: site.domain.primary.ssl,
         wildcard: site.domain.primary.wildcard,
-        routing: site.domain.primary.routing,
       },
       aliasDomain: aliasDomain,
       localBackup: site.localbackup,
@@ -1095,10 +1167,8 @@ function addSingleJSON(site) {
   for (domain of site.domain.alias) {
     aliasDomain.push({
       url: domain.url,
-      subDomain: domain.subDomain,
       ssl: domain.ssl,
       wildcard: domain.wildcard,
-      routing: domain.routing,
     });
   }
   result = {
@@ -1106,10 +1176,8 @@ function addSingleJSON(site) {
     user: site.user,
     primaryDomain: {
       url: site.domain.primary.url,
-      subDomain: site.domain.primary.subDomain,
       ssl: site.domain.primary.ssl,
       wildcard: site.domain.primary.wildcard,
-      routing: site.domain.primary.routing,
     },
     aliasDomain: aliasDomain,
     localBackup: site.localbackup,

@@ -79,6 +79,7 @@ async function serverDetails(req, res) {
       .toArray();
 
     result = result[0];
+    console.log(result);
     if (!result) {
       throw Error;
     }
@@ -94,6 +95,7 @@ async function serverDetails(req, res) {
     response = Object.assign(response.data, sites);
     res.json(response);
   } catch (error) {
+    console.log(error);
     res.json({
       error: "Server not found",
     });

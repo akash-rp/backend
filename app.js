@@ -8,18 +8,6 @@ const corsOptions = {
   maxAge: 2000,
 };
 
-//Middlewear for parsing incomming json request
-app.use(
-  "/proxy",
-  proxy("128.199.28.207:8080", {
-    proxyReqPathResolver: function (req) {
-      var parts = req.url.split("?");
-      var queryString = parts[1];
-      var updatedPath = parts[0].replace(/test/, "tent");
-      return "/proxy/" + updatedPath + (queryString ? "?" + queryString : "");
-    },
-  })
-);
 app.use(express.json());
 
 //CORS options
