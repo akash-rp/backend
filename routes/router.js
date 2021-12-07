@@ -123,11 +123,21 @@ router.post("/site/:siteid/createstaging", (req, res) => {
 router.get("/site/:siteid/getdbtables", (req, res) => {
   sites.getDatabaseTables(req, res);
 });
+router.get("/site/:siteid/delete", (req, res) => {
+  sites.deleteSite(req, res);
+});
 
-router.post("/site/:siteid/push", (req, res) => {
-  sites.pushSite(req, res);
+router.post("/site/:siteid/sync", (req, res) => {
+  sites.syncChanges(req, res);
+});
+router.get("/staging/:siteid", (req, res) => {
+  sites.getStagingSite(req, res);
+});
+router.get("/staging/:siteid/delete", (req, res) => {
+  sites.deleteStaging(req, res);
 });
 router.get("/asdf", (req, res) => {
   res.redirect("/servers");
 });
+
 module.exports = router;

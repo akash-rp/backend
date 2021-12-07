@@ -146,7 +146,7 @@ async function addSite(req, res) {
         },
         created: false,
       },
-      staging: [],
+      staging: "",
       type: "live",
     };
 
@@ -815,7 +815,7 @@ async function updateLocalBackup(req, res) {
       "http://" +
         site.ip +
         ":8081" +
-        "/localbackup/" +
+        "/updatelocalbackup/" +
         data.type +
         "/" +
         site.name +
@@ -830,9 +830,7 @@ async function updateLocalBackup(req, res) {
         },
       }
     );
-    if (data.type == "enable") {
-      data.backup.created = true;
-    }
+
     await mongodb
       .get()
       .db("hosting")
@@ -867,8 +865,6 @@ async function takeLocalOndemandBackup(req, res) {
         site.ip +
         ":8081" +
         "/takelocalondemandbackup/" +
-        type +
-        "/" +
         site.name +
         "/" +
         site.user,
@@ -971,7 +967,9 @@ async function createStaging(req, res) {
   siteid = req.params.siteid;
   data = req.body;
   try {
+    console.log("E0");
     id = uuidv4();
+    console.log("E1");
     site = await mongodb
       .get()
       .db("hosting")
@@ -979,11 +977,7 @@ async function createStaging(req, res) {
       .find({ siteId: siteid })
       .toArray();
     site = site[0];
-    if (!site.localbackup.ondemand) {
-      type = "new";
-    } else {
-      type = "existing";
-    }
+    console.log("E2");
     await axios.get(
       "http://" +
         site.ip +
@@ -991,8 +985,6 @@ async function createStaging(req, res) {
         site.name +
         "/" +
         site.user +
-        "/" +
-        type +
         "/" +
         data.url +
         "/" +
@@ -1003,17 +995,14 @@ async function createStaging(req, res) {
         },
       }
     );
-
+    console.log("E3");
     site.localbackup.ondemand = true;
     await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .updateOne(
-        { siteId: siteid },
-        { $set: { localbackup: site.localbackup } },
-        { $push: { staging: id } }
-      );
+      .updateOne({ siteId: siteid }, { $set: { staging: id } });
+    console.log("E4");
     const doc = {
       siteId: id,
       user: site.user,
@@ -1044,13 +1033,15 @@ async function createStaging(req, res) {
           type: "Day",
         },
         created: false,
-        type: "staging",
       },
+      live: siteid,
+      type: "staging",
     };
     await mongodb.get().db("hosting").collection("sites").insertOne(doc);
-
-    return res.json({ error: null });
+    console.log("E5");
+    return res.json({});
   } catch (error) {
+    console.log("Here is the error");
     console.log(error);
     return res.json({ error: "Cannot create staging site" });
   }
@@ -1081,33 +1072,204 @@ async function getDatabaseTables(req, res) {
   }
 }
 
-async function pushSite(req, res) {
+async function syncChanges(req, res) {
   const siteid = req.params.siteid;
+  let data = req.body;
   console.log(siteid);
   try {
-    fromSite = await mongodb
+    mainSite = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
-    console.log();
-    fromSite = fromSite[0];
-    console.log(fromSite);
-    toSite = await mongodb
+      .findOne(
+        { siteId: siteid },
+        {
+          projection: {
+            _id: 0,
+            name: 1,
+            user: 1,
+            type: 1,
+            domain: { primary: { url: 1 } },
+            ip: 1,
+            staging: 1,
+          },
+        }
+      );
+    console.log(mainSite);
+    stagingSite = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({
-        siteId:
-          fromSite.type == "live" ? fromSite.stagingId : fromSite.livesiteId,
-      })
-      .toArray();
-    toSite = toSite[0];
-    console.log(toSite);
-    res.json(toSite);
+      .findOne(
+        {
+          siteId: mainSite.staging,
+        },
+        {
+          projection: {
+            _id: 0,
+            name: 1,
+            user: 1,
+            type: 1,
+            domain: { primary: { url: 1 } },
+          },
+        }
+      );
+    console.log(stagingSite);
+    mainSite.url = mainSite.domain.primary.url;
+    stagingSite.url = stagingSite.domain.primary.url;
+    delete mainSite.domain;
+    delete stagingSite.domain;
+    var fromSite, toSite;
+    if (data.method == "push") {
+      fromSite = mainSite;
+      toSite = stagingSite;
+    } else {
+      fromSite = stagingSite;
+      toSite = mainSite;
+    }
+    await axios.post(
+      "http://" + mainSite.ip + ":8081" + "/syncChanges",
+      JSON.stringify({
+        method: data.method,
+        type: data.type,
+        dbType: data.dbType,
+        allSelected: data.allSelected,
+        tables: data.tables,
+        fromSite,
+        toSite,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    console.log(stagingSite);
+    res.json("Success");
   } catch (error) {
     console.log(error);
+    res.status(404).json("Something Went wrong");
+  }
+}
+
+async function getStagingSite(req, res) {
+  const siteid = req.params.siteid;
+  try {
+    staging = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne(
+        { live: siteid },
+        {
+          projection: {
+            _id: 0,
+            name: 1,
+            user: 1,
+            domain: { primary: { url: 1 } },
+          },
+        }
+      );
+    console.log("staging");
+    res.json(staging);
+  } catch (error) {
+    console.log(error);
+    res.send().status(404);
+  }
+}
+
+async function deleteStaging(req, res) {
+  console.log("juee");
+  siteid = req.params.siteid;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne(
+        { siteId: siteid, type: "staging" },
+        { projection: { _id: 0, ip: 1, name: 1, user: 1, live: 1 } }
+      );
+    if (!site) {
+      throw "Not found";
+    }
+    await axios.get(
+      "http://" +
+        site.ip +
+        ":8081/deleteStaging/" +
+        site.name +
+        "/" +
+        site.user,
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne({ siteId: site.live }, { $set: { staging: "" } });
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .deleteOne({ siteId: siteid });
+    res.json("Success");
+  } catch (error) {
+    console.log(error);
+    res.status(404).json("Something went wrong");
+  }
+}
+
+async function deleteSite(req, res) {
+  siteid = req.params.siteid;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne(
+        { siteId: siteid },
+        { projection: { _id: 0, name: 1, user: 1, staging: 1, ip: 1 } }
+      );
+    if (!site) {
+      throw "Not found";
+    }
+    if (site.staging !== "") {
+      isStaging = true;
+      staging = await mongodb
+        .get()
+        .db("hosting")
+        .collection("sites")
+        .findOne(
+          { siteId: site.staging },
+          { projection: { _id: 0, name: 1, user: 1 } }
+        );
+    }
+    text = JSON.stringify({});
+    console.log(text);
+    await axios.post(
+      "http://" + site.ip + ":8081/deleteSite",
+      JSON.stringify({
+        main: { user: site.user, name: site.name },
+        staging: { ...staging },
+        isStaging: isStaging,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .deleteOne({ siteId: siteid });
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .deleteOne({ siteId: site.staging });
+  } catch (error) {
+    console.log(error);
+    res.status(404).json("something went wrong");
   }
 }
 
@@ -1131,7 +1293,10 @@ module.exports = {
   restoreLocalBackup,
   createStaging,
   getDatabaseTables,
-  pushSite,
+  syncChanges,
+  getStagingSite,
+  deleteStaging,
+  deleteSite,
 };
 
 function addJSON(sites) {

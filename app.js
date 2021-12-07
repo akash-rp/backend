@@ -7,7 +7,7 @@ const app = express();
 const corsOptions = {
   maxAge: 2000,
 };
-
+Error.stackTraceLimit = Infinity;
 app.use(express.json());
 
 //CORS options
