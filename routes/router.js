@@ -139,5 +139,10 @@ router.get("/staging/:siteid/delete", (req, res) => {
 router.get("/asdf", (req, res) => {
   res.redirect("/servers");
 });
-
+router.post("/ssh/add/:siteid", (req, res) => {
+  sites.addSSHkey(req, res);
+});
+router.post("/ssh/remove/:siteid", (req, res) => {
+  sites.removeSSHkey(req, res);
+});
 module.exports = router;

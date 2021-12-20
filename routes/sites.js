@@ -1230,6 +1230,7 @@ async function deleteSite(req, res) {
         { siteId: siteid },
         { projection: { _id: 0, name: 1, user: 1, staging: 1, ip: 1 } }
       );
+    console.log(site);
     if (!site) {
       throw "Not found";
     }
@@ -1244,8 +1245,13 @@ async function deleteSite(req, res) {
           { projection: { _id: 0, name: 1, user: 1 } }
         );
     }
-    text = JSON.stringify({});
-    console.log(text);
+    console.log(
+      JSON.stringify({
+        main: { user: site.user, name: site.name },
+        staging: { ...staging },
+        isStaging: isStaging,
+      })
+    );
     await axios.post(
       "http://" + site.ip + ":8081/deleteSite",
       JSON.stringify({
@@ -1267,9 +1273,76 @@ async function deleteSite(req, res) {
       .db("hosting")
       .collection("sites")
       .deleteOne({ siteId: site.staging });
+    res.json("Success");
   } catch (error) {
     console.log(error);
     res.status(404).json("something went wrong");
+  }
+}
+
+async function addSSHkey(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ siteId: siteid }, { projection: { _id: 0, user: 1, ip: 1 } });
+    await axios.post(
+      "http://" + site.ip + ":8081/addSSH/" + site.user,
+      JSON.stringify({
+        key: data.key,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne(
+        { siteId: siteid },
+        { $push: { ssh: { label: data.label, key: data.key } } }
+      );
+    res.json("Success");
+  } catch (error) {
+    console.log(error);
+    res.json("Failed");
+  }
+}
+
+async function removeSSHkey(req, res) {
+  siteid = req.params.siteid;
+  data = req.body;
+  try {
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ siteId: siteid }, { projection: { _id: 0, user: 1, ip: 1 } });
+    await axios.post(
+      "http://" + site.ip + ":8081/removeSSH/" + site.user,
+      JSON.stringify({
+        key: data.key,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne(
+        { siteId: siteid },
+        { $pull: { ssh: { key: data.key, label: data.label } } }
+      );
+    res.json("Success");
+  } catch (error) {
+    console.log(error);
+    res.json("Failed");
   }
 }
 
@@ -1297,6 +1370,8 @@ module.exports = {
   getStagingSite,
   deleteStaging,
   deleteSite,
+  addSSHkey,
+  removeSSHkey,
 };
 
 function addJSON(sites) {
