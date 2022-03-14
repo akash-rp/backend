@@ -1,15 +1,17 @@
 const express = require("express");
-const fetch = require("node-fetch");
 
-const fusionauth = require("../connectors/fusionauth");
 const router = express.Router();
 
-const users = require("./users");
-const servers = require("./servers");
-const sites = require("./sites");
-const db = require("../db/mongo");
+const users = require("../Identity/users");
+const Servers = require("../server/server");
+const Site = require("../Site/site");
+const Backup = require("../Site/backup");
+const Domain = require("../Site/domain");
+const PHP = require("../Site/php");
+const SSL = require("../Site/ssl");
+const Staging = require("../Site/staging");
+const SSH = require("../Site/ssh");
 
-const { customAlphabet } = require("nanoid");
 // get the client
 router.get("/", async function (req, res) {});
 
@@ -37,7 +39,7 @@ router.post("/register", (req, res) => {
 });
 
 router.post("/servers", (req, res) => {
-  servers.getServers(req, res);
+  Servers.get(req, res);
 });
 
 router.post("/userdetails", (req, res) => {
@@ -45,104 +47,128 @@ router.post("/userdetails", (req, res) => {
 });
 
 router.post("/addserver", (req, res) => {
-  servers.addServer(req, res);
+  Servers.add(req, res);
 });
 
 router.get("/server/:serverid", (req, res) => {
-  servers.serverDetails(req, res);
+  Servers.details(req, res);
 });
 
 router.get("/sitesummary/:serverid", (req, res) => {
-  sites.getSiteSummary(req, res);
+  Site.summary(req, res);
 });
 
 router.post("/addsite/:serverid", (req, res) => {
-  sites.addSite(req, res);
+  Site.add(req, res);
 });
 
 router.get("/server/:serverid/sites", (req, res) => {
-  sites.getSitesOfServer(req, res);
+  Servers.sites(req, res);
 });
 
 router.get("/site/:siteid", (req, res) => {
-  sites.getOneSite(req, res);
+  Site.details(req, res);
 });
 
 router.post("/site/:siteid/addDomain", (req, res) => {
-  sites.addDomainToSite(req, res);
+  Domain.add(req, res);
 });
 
 router.post("/site/:siteid/deleteDomain", (req, res) => {
-  sites.deleteDomain(req, res);
+  Domain.delete(req, res);
 });
 
 router.post("/site/:siteid/changeRoute", (req, res) => {
-  sites.changeRoute(req, res);
+  Domain.changeRoute(req, res);
 });
 
 router.post("/site/:siteid/wildcard", (req, res) => {
-  sites.changeWildcard(req, res);
+  Domain.changeWildcard(req, res);
 });
 
 router.post("/site/:siteid/changePrimary", (req, res) => {
-  sites.changePrimary(req, res);
+  Domain.changePrimary(req, res);
 });
 
 router.post("/site/:siteid/changePHP", (req, res) => {
-  sites.changePHP(req, res);
+  PHP.changeVersion(req, res);
 });
 
 router.get("/site/:siteid/getPHPini", (req, res) => {
-  sites.getPHPini(req, res);
+  PHP.getPHPini(req, res);
 });
 
 router.post("/site/:siteid/updatePhpIni", (req, res) => {
-  sites.updatePHPini(req, res);
+  PHP.updatePHPini(req, res);
 });
 
 router.post("/site/:siteid/updatelocalbackup", (req, res) => {
-  sites.updateLocalBackup(req, res);
+  Backup.updateLocalBackup(req, res);
 });
 
 router.get("/site/:siteid/localondemandbackup", (req, res) => {
-  sites.takeLocalOndemandBackup(req, res);
+  Backup.takeOndemand(req, res);
 });
 
 router.get("/site/:siteid/localbackuplist/:mode", (req, res) => {
-  sites.getLocalBackupList(req, res);
+  Backup.getLocalBackupList(req, res);
 });
 
 router.post("/site/:siteid/restorelocalbackup", (req, res) => {
-  sites.restoreLocalBackup(req, res);
+  Backup.restoreLocalBackup(req, res);
 });
 
 router.post("/site/:siteid/createstaging", (req, res) => {
-  sites.createStaging(req, res);
+  Staging.create(req, res);
 });
 
 router.get("/site/:siteid/getdbtables", (req, res) => {
-  sites.getDatabaseTables(req, res);
+  Staging.getDB(req, res);
 });
 router.get("/site/:siteid/delete", (req, res) => {
-  sites.deleteSite(req, res);
+  Site.delete(req, res);
 });
 
 router.post("/site/:siteid/sync", (req, res) => {
-  sites.syncChanges(req, res);
+  Staging.sync(req, res);
 });
 router.get("/staging/:siteid", (req, res) => {
-  sites.getStagingSite(req, res);
+  Staging.get(req, res);
 });
 router.get("/staging/:siteid/delete", (req, res) => {
-  sites.deleteStaging(req, res);
-});
-router.get("/asdf", (req, res) => {
-  res.redirect("/servers");
+  Staging.delete(req, res);
 });
 router.post("/ssh/add/:siteid", (req, res) => {
-  sites.addSSHkey(req, res);
+  SSH.add(req, res);
 });
 router.post("/ssh/remove/:siteid", (req, res) => {
-  sites.removeSSHkey(req, res);
+  SSH.remove(req, res);
 });
+router.get("/site/:siteid/ptlist", (req, res) => {
+  Site.getPluginsThemesList(req, res);
+});
+router.post("/site/:siteid/plugins", (req, res) => {
+  Site.updatePlugins(req, res);
+});
+router.post("/site/:siteid/themes", (req, res) => {
+  Site.updateThemes(req, res);
+});
+router.post("/cert/add/:siteid", (req, res) => {
+  SSL.add(req, res);
+});
+router.post("/site/:siteid/enforceHttps", (req, res) => {
+  SSL.enforceHttps(req, res);
+});
+router.get("/server/:serverid/health", (req, res) => {
+  Servers.health(req, res);
+});
+
+router.get("/server/:serverid/service/status", (req, res) => {
+  Servers.serviceStatus(req, res);
+});
+
+router.post("/server/:serverid/service/:control/:process", (req, res) => {
+  Servers.serviceControl(req, res);
+});
+
 module.exports = router;
