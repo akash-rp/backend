@@ -1,6 +1,7 @@
 const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
 const { parseDomain, fromUrl } = require("parse-domain");
+const site = require("./site");
 
 async function addDomainToSite(req, res) {
   try {
@@ -262,54 +263,60 @@ async function changeWildcard(req, res) {
   try {
     siteid = req.params.siteid;
     data = req.body;
-    sites = await mongodb
+    resSite = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: data.serverid })
-      .toArray();
-    let mainSite;
-    let found;
+      .findOne({ serverId: data.serverid, siteId: siteid });
 
-    for (site of sites) {
-      if (site.siteId == siteid) {
-        mainSite = site;
-        break;
-      }
-    }
-    if (mainSite == undefined) {
+    if (resSite == undefined) {
       res.json({ error: "Site not found" });
       return;
     }
-
-    if (data.url == mainSite.domain.primary.url) {
-      if (mainSite.domain.primary.subDomain) {
-        res.json({ error: "Subdomain not allowed" });
-        return;
+    var found;
+    var domain;
+    console.log(resSite);
+    if (data.type == "primary") {
+      if (data.url == resSite.domain.primary.url) {
+        if (resSite.domain.primary.isSubDomain) {
+          res.json({ error: "Subdomain not allowed" });
+          return;
+        }
+        domain = resSite.domain.primary;
+        resSite.domain.primary.wildcard = data.wildcard;
+        found = true;
       }
-      mainSite.domain.primary.wildcard = data.wildcard;
-      found = true;
+    } else {
+      resSite.domain.alias = resSite.domain.alias.map((alias) => {
+        if (alias.url === data.url) {
+          if (!alias.isSubDomain) {
+            found = true;
+            domain = alias;
+            alias.wildcard = data.wildcard;
+            return alias;
+          } else {
+            return alias;
+          }
+        } else {
+          return alias;
+        }
+      });
     }
     if (!found) {
-      for (alias of mainSite.domain.alias) {
-        if (alias.url === data.url) {
-          if (!alias.subDomain) {
-            alias.wildcard = data.wildcard;
-            break;
-          } else {
-            res.json({ error: "Subdomain not allowed" });
-            return;
-          }
-        }
-      }
+      return res.status(400).send();
     }
-    siteJSON = addSingleJSON(mainSite);
-    console.log(siteJSON);
+    method = data.wildcard ? "add" : "remove";
+
     await axios.post(
-      "http://" + mainSite.ip + ":8081/domainedit",
+      "http://" + resSite.ip + ":8081/domain/wildcard/" + method,
       {
-        name: mainSite.name,
-        site: siteJSON,
+        site: resSite.name,
+        domain: {
+          url: domain.url,
+          isSubDomain: domain.isSubDomain,
+          routing: domain.routing,
+          type: data.type,
+        },
       },
       {
         headers: {
@@ -321,11 +328,15 @@ async function changeWildcard(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .updateOne({ siteId: siteid }, { $set: { domain: mainSite.domain } });
-    res.json({});
+      .updateOne({ siteId: siteid }, { $set: { domain: resSite.domain } });
+    // function sleep(ms) {
+    //   return new Promise((resolve) => setTimeout(resolve, ms));
+    // }
+    // await sleep(10000);
+    res.json(resSite);
   } catch (error) {
     console.log(error);
-    res.json({ error: "Something went wrong" });
+    res.status(400).json({ error: "Something went wrong" });
   }
 }
 

@@ -177,10 +177,10 @@ async function getOneSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
+      .findOne({ siteId: siteid });
     res.json(result);
   } catch (err) {
+    console.log(err);
     res.status(400).json();
   }
 }

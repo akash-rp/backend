@@ -55,7 +55,7 @@ async function updateLocalBackup(req, res) {
       .collection("sites")
       .updateOne({ siteId: siteid }, { $set: { localbackup: data.backup } });
 
-    res.json({});
+    res.status(200).send();
   } catch (error) {
     console.log("error");
     console.log(error);
@@ -128,15 +128,14 @@ async function getLocalBackupList(req, res) {
         ":8081/localbackup/list/" +
         site.name +
         "/" +
-        site.user +
-        "/" +
-        mode,
+        site.user,
       {
         headers: {
           "Content-Type": "application/json",
         },
       }
     );
+
     res.json(result.data);
   } catch (error) {
     console.log(error);

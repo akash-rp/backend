@@ -54,12 +54,3 @@ function addSingleJSON(site) {
 
   return result;
 }
-
-function parseIntFromObj(obj) {
-  Object.keys(obj).forEach((key) => {
-    if (key != "ShortOpenTag") {
-      obj[key] = parseInt(obj[key]);
-    }
-  });
-  return obj;
-}
