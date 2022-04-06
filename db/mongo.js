@@ -1,5 +1,8 @@
+const mongodb = require("mongodb");
 const mongoClient = require("mongodb").MongoClient;
-let mongodb;
+
+/** @type {mongodb.MongoClient} */
+let db;
 // let db;
 // async function mongo() {
 //   console.log("connecting");
@@ -8,13 +11,15 @@ let mongodb;
 // }
 
 function connect(callback) {
-  mongoClient.connect("mongodb://localhost:27017", (err, db) => {
-    mongodb = db;
+  mongoClient.connect("mongodb://localhost:27017", (err, dbref) => {
+    db = dbref;
+
+    console.log("connected to database");
     callback();
   });
 }
 function get() {
-  return mongodb;
+  return db;
 }
 
 function close() {

@@ -1,5 +1,6 @@
 const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
+const { v4: uuidv4 } = require("uuid");
 
 async function createStaging(req, res) {
   siteid = req.params.siteid;
@@ -79,9 +80,8 @@ async function createStaging(req, res) {
     console.log("E5");
     return res.json({});
   } catch (error) {
-    console.log("Here is the error");
     console.log(error);
-    return res.json({ error: "Cannot create staging site" });
+    return res.status(400).json({ error: "Cannot create staging site" });
   }
 }
 

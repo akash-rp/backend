@@ -11,6 +11,7 @@ const PHP = require("../Site/php");
 const SSL = require("../Site/ssl");
 const Staging = require("../Site/staging");
 const SSH = require("../Site/ssh");
+const Firewall = require("../Site/firewall");
 
 // get the client
 router.get("/", async function (req, res) {});
@@ -169,6 +170,13 @@ router.get("/server/:serverid/service/status", (req, res) => {
 
 router.post("/server/:serverid/service/:control/:process", (req, res) => {
   Servers.serviceControl(req, res);
+});
+
+router.post("/site/:siteid/firewall/sevenG/update", (req, res) => {
+  Firewall.update7Gwaf(req, res);
+});
+router.post("/site/:siteid/firewall/modsec/update", (req, res) => {
+  Firewall.updateModsec(req, res);
 });
 
 module.exports = router;

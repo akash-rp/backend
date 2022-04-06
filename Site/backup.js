@@ -13,7 +13,9 @@ async function getBackupSettings(req, res) {
       .toArray();
     backup = backup[0];
     res.json(backup.backup);
-  } catch (error) {}
+  } catch (error) {
+    
+  }
 }
 
 async function updateLocalBackup(req, res) {
@@ -72,13 +74,8 @@ async function takeLocalOndemandBackup(req, res) {
       .db("hosting")
       .collection("sites")
       .findOne({ siteId: siteid });
-    console.log(site);
-    if (!site.localbackup.ondemand) {
-      type = "new";
-    } else {
-      type = "existing";
-    }
-    await axios.get(
+
+    result = await axios.get(
       "http://" +
         site.ip +
         ":8081" +
@@ -92,21 +89,11 @@ async function takeLocalOndemandBackup(req, res) {
         },
       }
     );
-    if (!site.localbackup.ondemand) {
-      site.localbackup.ondemand = true;
-      await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .updateOne(
-          { siteId: siteid },
-          { $set: { localbackup: site.localbackup } }
-        );
-    }
-    res.json("");
+
+    res.json(result.data);
   } catch (error) {
     console.log(error);
-    res.status(404).json("");
+    res.status(404).send(error);
   }
 }
 

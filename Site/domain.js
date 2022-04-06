@@ -26,7 +26,7 @@ async function addDomainToSite(req, res) {
     });
 
     if (mainSite == undefined) {
-      res.json();
+      return res.status(400).json();
     }
 
     const { subDomains, domain, topLevelDomains } = parseDomain(
@@ -50,60 +50,24 @@ async function addDomainToSite(req, res) {
     } else {
       url = domain + "." + topLevelDomains.join(".");
     }
-    // Check for same domain across all app and also on wildcard domain
-    for (let site of sites) {
-      if (site.domain.primary.url === url) {
-        res.json({
-          error: "This url is being used by other site",
-        });
-        return;
-      }
-      /*########################################################################################### 
-            Alias For loop    
-    ##############################################################################################*/
-      for (let domain of site.domain.alias) {
-        if (domain.url === url) {
-          res.json({
-            error: "This url is being used by other site",
-          });
-          return;
-        }
-      }
-      /*########################################################################################### 
-            Redirect for loop  
-    ##############################################################################################*/
-      for (let domain of site.domain.redirect) {
-        if (domain.url === url) {
-          res.json({
-            error: "This url is being used by other site",
-          });
-          return;
-        }
-      }
+    // Check for same domain across all sites and also on wildcard domain
+    if (searchForUrl(url, sites)) {
+      return res.status(400).json({ error: "Url exists" });
     }
-    sites.forEach((site) => {
-      if (site.siteId == siteid) {
-        if (data.type == "alias") {
-          site.domain.alias.push({
-            url: url,
-            ssl: {
-              issued: false,
-              expiry: "",
-            },
-            wildcard: false,
-            isSubDomain: isSubDomain,
-            routing: routing,
-          });
-        }
-        // site.domain.exclude = mainSite.domain.exclude;
-      }
-    });
-    let app;
-    for (let site of sites) {
-      if (site.siteId == siteid) {
-        app = site;
-      }
+    if (data.type == "alias") {
+      mainSite.domain.alias.push({
+        url: url,
+        ssl: {
+          issued: false,
+          expiry: "",
+        },
+        wildcard: false,
+        isSubDomain: isSubDomain,
+        routing: routing,
+      });
     }
+    // site.domain.exclude = mainSite.domain.exclude;
+
     await axios.post(
       "http://" + ip + ":8081/domain/add",
       {
@@ -112,7 +76,7 @@ async function addDomainToSite(req, res) {
           isSubDomain: isSubDomain,
           routing: routing,
         },
-        site: app.name,
+        site: mainSite.name,
       },
       {
         headers: {
@@ -121,18 +85,19 @@ async function addDomainToSite(req, res) {
       }
     );
     // console.timeEnd("axios");
-    for (let site of sites) {
-      await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .updateOne({ siteId: site.siteId }, { $set: { domain: site.domain } });
-    }
+    await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .updateOne(
+        { siteId: mainSite.siteId },
+        { $set: { domain: mainSite.domain } }
+      );
 
     res.json({ ...mainSite });
   } catch (err) {
     console.log(err);
-    res.json({ error: err });
+    res.status(400).json({ error: err });
   }
 }
 
@@ -165,7 +130,6 @@ async function deleteDomain(req, res) {
       }
     });
 
-    console.time("delete");
     await axios.post(
       "http://" + mainSite.ip + ":8081/domain/delete",
       {
@@ -178,16 +142,16 @@ async function deleteDomain(req, res) {
         },
       }
     );
-    console.timeEnd("delete");
     await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .updateOne({ siteId: siteid }, { $set: { domain: mainSite.domain } });
+
     res.json({});
   } catch (err) {
     console.log(err);
-    res.json({ error: err });
+    res.status(400).send();
   }
 }
 
@@ -270,7 +234,7 @@ async function changeWildcard(req, res) {
       .findOne({ serverId: data.serverid, siteId: siteid });
 
     if (resSite == undefined) {
-      res.json({ error: "Site not found" });
+      res.status(400).json({ error: "Site not found" });
       return;
     }
     var found;
@@ -351,7 +315,7 @@ async function changePrimary(req, res) {
       .collection("sites")
       .find({ serverId: data.serverid })
       .toArray();
-    for (site of sites) {
+    for (let site of sites) {
       if (site.siteId == siteid) {
         mainSite = site;
         break;
@@ -371,7 +335,7 @@ async function changePrimary(req, res) {
     );
 
     mainSite.domain.alias.push(tempSite);
-    for (site of sites) {
+    for (let site of sites) {
       if (site.siteId == siteid) {
         site = mainSite;
       }
@@ -398,7 +362,7 @@ async function changePrimary(req, res) {
     res.json({});
   } catch (error) {
     console.log(error);
-    res.json({ error: error });
+    res.status(400).send();
   }
 }
 
@@ -409,3 +373,28 @@ module.exports = {
   changeWildcard,
   changePrimary,
 };
+
+function searchForUrl(url, sites) {
+  for (let site of sites) {
+    if (site.domain.primary.url === url) {
+      return true;
+    }
+    /*########################################################################################### 
+          Alias For loop    
+  ##############################################################################################*/
+    for (let domain of site.domain.alias) {
+      if (domain.url === url) {
+        return true;
+      }
+    }
+    /*########################################################################################### 
+          Redirect for loop  
+  ##############################################################################################*/
+    for (let domain of site.domain.redirect) {
+      if (domain.url === url) {
+        return true;
+      }
+    }
+  }
+  return false;
+}

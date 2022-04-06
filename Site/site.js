@@ -117,7 +117,7 @@ async function addSite(req, res) {
     );
     id = uuidv4();
     const doc = {
-      siteId: Binary(id, 2),
+      siteId: id,
       user: data.userName,
       serverId: serverid,
       name: data.appName,

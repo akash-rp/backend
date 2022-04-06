@@ -1,5 +1,4 @@
 const fusionauth = require("../connectors/fusionauth");
-const getQuery = require("../db/db");
 const md5 = require("md5");
 
 const createAccount = async function (req, res) {

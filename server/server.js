@@ -1,4 +1,3 @@
-const db = require("../db/db");
 const mongodb = require("../db/mongo");
 const { customAlphabet } = require("nanoid");
 const { default: axios } = require("axios");
