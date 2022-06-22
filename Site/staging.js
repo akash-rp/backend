@@ -1,52 +1,37 @@
-const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
 const { v4: uuidv4 } = require("uuid");
+const mongodb = require("../db/mongo");
 
 async function createStaging(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    console.log("E0");
-    id = uuidv4();
-    console.log("E1");
-    site = await mongodb
+    let id = uuidv4();
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
-    site = site[0];
-    console.log("E2");
+      .findOne({ userId: req.user.id, siteId: siteid });
+
     await axios.get(
-      "http://" +
-        site.ip +
-        ":8081/createstaging/" +
-        site.name +
-        "/" +
-        site.user +
-        "/" +
-        data.url +
-        "/" +
-        site.domain.primary.url,
+      `http://${site.ip}:8081/createstaging/${site.name}/${site.user}/${data.url}/${site.domain.primary.url}`,
       {
         headers: {
           "Content-Type": "application/json",
         },
       }
     );
-    console.log("E3");
     site.localbackup.ondemand = true;
     await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .updateOne({ siteId: siteid }, { $set: { staging: id } });
-    console.log("E4");
     const doc = {
       siteId: id,
       user: site.user,
       serverId: site.serverId,
-      name: site.name + "_Staging",
+      name: `${site.name}_Staging`,
       php: "lsphp74",
       ip: site.ip,
       domain: {
@@ -77,7 +62,6 @@ async function createStaging(req, res) {
       type: "staging",
     };
     await mongodb.get().db("hosting").collection("sites").insertOne(doc);
-    console.log("E5");
     return res.json({});
   } catch (error) {
     console.log(error);
@@ -86,17 +70,16 @@ async function createStaging(req, res) {
 }
 
 async function getDatabaseTables(req, res) {
-  const siteid = req.params.siteid;
+  const { siteid } = req.params;
   try {
     let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
-    site = site[0];
-    result = await axios.get(
-      "http://" + site.ip + ":8081/getdbtables/" + site.name + "/" + site.user,
+      .findOne({ userId: req.user.id, siteId: siteid });
+
+    let result = await axios.get(
+      `http://${site.ip}:8081/getdbtables/${site.name}/${site.user}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -111,16 +94,15 @@ async function getDatabaseTables(req, res) {
 }
 
 async function syncChanges(req, res) {
-  const siteid = req.params.siteid;
-  let data = req.body;
-  console.log(siteid);
+  const { siteid } = req.params;
+  const data = req.body;
   try {
-    mainSite = await mongodb
+    let mainSite = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         {
           projection: {
             _id: 0,
@@ -133,15 +115,12 @@ async function syncChanges(req, res) {
           },
         }
       );
-    console.log(mainSite);
-    stagingSite = await mongodb
+    let stagingSite = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        {
-          siteId: mainSite.staging,
-        },
+        { userId: req.user.id, siteId: mainSite.staging },
         {
           projection: {
             _id: 0,
@@ -152,12 +131,12 @@ async function syncChanges(req, res) {
           },
         }
       );
-    console.log(stagingSite);
     mainSite.url = mainSite.domain.primary.url;
     stagingSite.url = stagingSite.domain.primary.url;
     delete mainSite.domain;
     delete stagingSite.domain;
-    var fromSite, toSite;
+    let fromSite;
+    let toSite;
     if (data.method == "push") {
       fromSite = mainSite;
       toSite = stagingSite;
@@ -166,7 +145,7 @@ async function syncChanges(req, res) {
       toSite = mainSite;
     }
     await axios.post(
-      "http://" + mainSite.ip + ":8081" + "/syncChanges",
+      `http://${mainSite.ip}:8081` + "/syncChanges",
       JSON.stringify({
         type: data.type,
         dbType: data.dbType,
@@ -182,7 +161,6 @@ async function syncChanges(req, res) {
         headers: { "Content-Type": "application/json" },
       }
     );
-    console.log(stagingSite);
     res.json("Success");
   } catch (error) {
     console.log(error);
@@ -191,14 +169,14 @@ async function syncChanges(req, res) {
 }
 
 async function getStagingSite(req, res) {
-  const siteid = req.params.siteid;
+  const { siteid } = req.params;
   try {
-    staging = await mongodb
+    let staging = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { live: siteid },
+        { userId: req.user.id, live: siteid },
         {
           projection: {
             _id: 0,
@@ -208,7 +186,6 @@ async function getStagingSite(req, res) {
           },
         }
       );
-    console.log(staging);
     res.json(staging);
   } catch (error) {
     console.log(error);
@@ -217,27 +194,29 @@ async function getStagingSite(req, res) {
 }
 
 async function deleteStaging(req, res) {
-  console.log("juee");
-  siteid = req.params.siteid;
+  let siteid = req.params.siteid;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { siteId: siteid, type: "staging" },
-        { projection: { _id: 0, ip: 1, name: 1, user: 1, live: 1 } }
+        { userId: req.user.id, siteId: siteid, type: "staging" },
+        {
+          projection: {
+            _id: 0,
+            ip: 1,
+            name: 1,
+            user: 1,
+            live: 1,
+          },
+        }
       );
     if (!site) {
       throw "Not found";
     }
     await axios.get(
-      "http://" +
-        site.ip +
-        ":8081/deleteStaging/" +
-        site.name +
-        "/" +
-        site.user,
+      `http://${site.ip}:8081/deleteStaging/${site.name}/${site.user}`,
       {
         headers: { "Content-Type": "application/json" },
       }

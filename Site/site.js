@@ -1,36 +1,19 @@
 const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
-const { parseDomain, fromUrl } = require("parse-domain");
 const { v4: uuidv4 } = require("uuid");
-
-async function getSiteSummary(req, res) {
-  try {
-    serverid = req.params.serverid;
-    const data = await mongodb
-      .get()
-      .db("hosting")
-      .collection("sites")
-      .find({ serverId: serverid })
-      .project({ name: 1, user: 1, "domain.primary.url": 1 })
-      .toArray();
-    res.json(data);
-  } catch (err) {
-    console.log(err);
-    res.json({ error: "Something went wrong" });
-  }
-}
+const domainFile = require("../Site/domain.js");
+const { searchForUrl } = require("../Site/domain.js");
 
 async function addSite(req, res) {
   try {
-    serverid = req.params.serverid;
+    let serverid = req.params.serverid;
     let result = await mongodb
       .get()
       .db("hosting")
       .collection("servers")
-      .find({ serverId: serverid })
-      .project({ ip: 1 })
-      .toArray();
-    result = result[0];
+      .findOne({ userId: req.user.id, serverId: serverid })
+      .project({ ip: 1 });
+
     if (!result) {
       throw Error;
     }
@@ -39,65 +22,23 @@ async function addSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .toArray();
     const data = req.body;
-    let url = data.url;
-    const { subDomains, domain, topLevelDomains } = parseDomain(fromUrl(url));
-    let isSubDomain = false;
-    let routing = "none";
-
-    //Remove www from the domain is present only on level 1 subdomain
-    if (subDomains && subDomains.length > 0) {
-      if (subDomains.length == 1) {
-        if (subDomains[0] === "www") {
-          url = domain + "." + topLevelDomains.join(".");
-          routing = "www";
-        } else {
-          isSubDomain = true;
-          url = subDomains[0] + "." + domain + "." + topLevelDomains.join(".");
-        }
-      } else {
-        isSubDomain = true;
-        url =
-          subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
-      }
-    } else {
-      url = domain + "." + topLevelDomains.join(".");
-    }
+    let { url, routing, isSubDomain } = domainFile.modifyDomain(data.url);
     // if (subDomains && subDomains.length > 0) {
     //   url =
     //     subDomains.join(".") + "." + domain + "." + topLevelDomains.join(".");
     // } else {
     //   url = domain + "." + topLevelDomains.join(".");
     // }
-    // Check for same domain across all app and also on wildcard domain
-    for (let site of sites) {
-      if (site.domain.primary.url === url) {
-        res.json({
-          error: "This url is being used by other site",
-        });
-        return;
-      }
 
-      for (let domain of site.domain.alias) {
-        if (domain.url === url) {
-          res.json({
-            error: "This url is being used by other site",
-          });
-          return;
-        }
-      }
-      for (let domain of site.domain.redirect) {
-        if (domain.url === url) {
-          res.json({
-            error: "This url is being used by other site",
-          });
-          return;
-        }
-      }
+    // Check for same domain across all app and also on wildcard domain
+    if (searchForUrl(url, sites)) {
+      return res.status(400).json("Url already exists");
     }
-    dbCred = await axios.post(
+
+    let dbCred = await axios.post(
       "http://" + result.ip + ":8081/wp/add",
       {
         appName: data.appName,
@@ -115,9 +56,10 @@ async function addSite(req, res) {
         },
       }
     );
-    id = uuidv4();
+    let id = uuidv4();
     const doc = {
       siteId: id,
+      userId: req.user.id,
       user: data.userName,
       serverId: serverid,
       name: data.appName,
@@ -152,6 +94,18 @@ async function addSite(req, res) {
       },
       staging: "",
       type: "live",
+      firewall: {
+        sevenG: {
+          enabled: false,
+          disable: [],
+        },
+        modsecurity: {
+          enabled: false,
+          paranoiaLevel: 1,
+          anomalyThreshold: 5,
+        },
+      },
+      authentication: false,
     };
 
     await mongodb.get().db("hosting").collection("sites").insertOne(doc);
@@ -159,7 +113,7 @@ async function addSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .toArray();
     let site = { [serverid]: result };
     res.json(site);
@@ -172,12 +126,15 @@ async function addSite(req, res) {
 
 async function getOneSite(req, res) {
   try {
-    siteid = req.params.siteid;
+    let siteid = req.params.siteid;
     let result = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid });
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!result) {
+      return res.status(404).send();
+    }
     res.json(result);
   } catch (err) {
     console.log(err);
@@ -186,20 +143,21 @@ async function getOneSite(req, res) {
 }
 
 async function deleteSite(req, res) {
-  siteid = req.params.siteid;
+  let siteid = req.params.siteid;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         { projection: { _id: 0, name: 1, user: 1, staging: 1, ip: 1 } }
       );
-    console.log(site);
     if (!site) {
       throw "Not found";
     }
+    let staging;
+    let isStaging = false;
     if (site.staging !== "") {
       isStaging = true;
       staging = await mongodb
@@ -207,17 +165,10 @@ async function deleteSite(req, res) {
         .db("hosting")
         .collection("sites")
         .findOne(
-          { siteId: site.staging },
+          { userId: req.user.id, siteId: site.staging },
           { projection: { _id: 0, name: 1, user: 1 } }
         );
     }
-    console.log(
-      JSON.stringify({
-        main: { user: site.user, name: site.name },
-        staging: { ...staging },
-        isStaging: isStaging,
-      })
-    );
     await axios.post(
       "http://" + site.ip + ":8081/deleteSite",
       JSON.stringify({
@@ -246,19 +197,39 @@ async function deleteSite(req, res) {
   }
 }
 
-async function getPluginsThemesList(req, res) {
-  siteid = req.params.siteid;
+async function getPluginList(req, res) {
+  let siteid = req.params.siteid;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         { projection: { _id: 0, name: 1, user: 1, ip: 1 } }
       );
-    result = await axios.get(
-      "http://" + site.ip + ":8081/ptlist/" + site.user + "/" + site.name
+    let result = await axios.get(
+      "http://" + site.ip + ":8081/plugin/list/" + site.user + "/" + site.name
+    );
+    res.json(result.data);
+  } catch (error) {
+    console.log(error);
+    res.status(404).json({ error: "Unable to fetch data" });
+  }
+}
+async function getThemeList(req, res) {
+  let siteid = req.params.siteid;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { _id: 0, name: 1, user: 1, ip: 1 } }
+      );
+    let result = await axios.get(
+      "http://" + site.ip + ":8081/theme/list/" + site.user + "/" + site.name
     );
     res.json(result.data);
   } catch (error) {
@@ -268,23 +239,22 @@ async function getPluginsThemesList(req, res) {
 }
 
 async function updatePlugins(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         { projection: { _id: 0, name: 1, user: 1, ip: 1 } }
       );
     let postData = [];
     for (let name of data.names) {
       postData.push({ name: name, operation: data.operation });
     }
-    console.log(postData);
-    result = await axios.post(
+    let result = await axios.post(
       "http://" + site.ip + ":8081/ptoperation/" + site.user + "/" + site.name,
       {
         plugins: postData,
@@ -301,15 +271,15 @@ async function updatePlugins(req, res) {
 }
 
 async function updateThemes(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .findOne(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         { projection: { _id: 0, name: 1, user: 1, ip: 1 } }
       );
     if (data.operation !== "activate" && data.operation !== "update") {
@@ -324,7 +294,7 @@ async function updateThemes(req, res) {
     for (let name of data.names) {
       postData.push({ name: name, operation: data.operation });
     }
-    result = await axios.post(
+    let result = await axios.post(
       "http://" + site.ip + ":8081/ptoperation/" + site.user + "/" + site.name,
       {
         themes: postData,
@@ -340,12 +310,257 @@ async function updateThemes(req, res) {
   }
 }
 
+async function changeOwnership(req, res) {
+  let siteid = req.params.siteid;
+  let body = req.body;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).send();
+    }
+    await axios.post("http://" + site.ip + ":8081/changeOwner", {
+      app: site.name,
+      newUser: body.user,
+      oldUser: site.user,
+      backup: site.localbackup,
+    });
+    let modifiedSite = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOneAndUpdate(
+        { userId: req.user.id, siteId: siteid },
+        { $set: { user: body.user } },
+        { returnDocument: "after" }
+      );
+    return res.json(modifiedSite.value);
+  } catch (error) {
+    console.log(error);
+    res.status(400).send();
+  }
+}
+
+async function enableSiteAuth(req, res) {
+  let siteid = req.params.siteid;
+  let body = req.body;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).send();
+    }
+    await axios.post("http://" + site.ip + ":8081/site/auth/add", {
+      name: site.name,
+      auth: {
+        user: body.username,
+        password: body.password,
+      },
+    });
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOneAndUpdate(
+        { userId: req.user.id, siteId: siteid },
+        {
+          $set: {
+            authentication: true,
+          },
+        },
+        {
+          returnDocument: "after",
+        }
+      );
+    return res.send(site.value);
+  } catch (error) {
+    console.log(error);
+    res.status(400).send();
+  }
+}
+async function disableSiteAuth(req, res) {
+  let siteid = req.params.siteid;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).send();
+    }
+    await axios.post(
+      "http://" + site.ip + ":8081/site/auth/delete/" + site.name
+    );
+    site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOneAndUpdate(
+        { userId: req.user.id, siteId: siteid },
+        {
+          $set: {
+            authentication: false,
+          },
+        },
+        {
+          returnDocument: "after",
+        }
+      );
+    return res.send(site.value);
+  } catch (error) {
+    console.log(error);
+    res.status(400).send();
+  }
+}
+
+async function fixSitePermission(req, res) {
+  let siteid = req.params.siteid;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).send();
+    }
+    await axios.post("http://" + site.ip + ":8081/site/fixPermission", {
+      name: site.name,
+      user: site.user,
+    });
+    return res.send();
+  } catch (error) {
+    console.log(error);
+    return res.status(400).send();
+  }
+}
+
+async function searchAndReplace(req, res) {
+  let siteid = req.params.siteid;
+  let body = req.body;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).json("Site not found");
+    }
+    await axios.post("http://" + site.ip + ":8081/searchAndReplace", {
+      search: body.search,
+      replace: body.replace,
+      name: site.name,
+      user: site.user,
+    });
+    return res.status(200).send();
+  } catch (error) {
+    console.log(error);
+    return res.status(400).send();
+  }
+}
+
+async function cloneSite(req, res) {
+  let siteid = req.params.siteid;
+  let body = req.body;
+  try {
+    let OriginalSite = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        {
+          projection: {
+            _id: 0,
+            ip: 1,
+            serverId: 1,
+            php: 1,
+            firewall: 1,
+            authentication: 1,
+            userId: 1,
+          },
+        }
+      );
+    if (!OriginalSite) {
+      return res.status(404).send();
+    }
+    let cloneSiteDb = await axios.post(
+      "http://" + OriginalSite.ip + ":8081/site/clone",
+      {
+        ...body,
+      }
+    );
+    let id = uuidv4();
+    let doc = {
+      name: body.cloneSite.name,
+      user: body.cloneSite.user,
+      siteId: id,
+      ...OriginalSite,
+      db: cloneSiteDb.data,
+      domain: {
+        primary: {
+          url: body.cloneSite.domain.url,
+          ssl: false,
+          wildcard: false,
+          isSubDomain: body.cloneSite.domain.isSubDomain,
+          routing: body.cloneSite.domain.routing,
+        },
+        alias: [],
+        redirect: [],
+      },
+      localbackup: {
+        automatic: false,
+        frequency: "Daily",
+        time: {
+          hour: "00",
+          minute: "00",
+          weekday: "Sunday",
+          monthday: "00",
+        },
+        retention: {
+          time: 1,
+          type: "Day",
+        },
+        created: false,
+      },
+      staging: "",
+      type: "live",
+    };
+    await mongodb.get().db("hosting").collection("sites").insertOne(doc);
+    let result = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .find({ userId: req.user.id, serverId: OriginalSite.serverId })
+      .toArray();
+    let site = { [OriginalSite.serverId]: result };
+    return res.json(site);
+  } catch (error) {
+    console.log(error);
+    return res.status(400).send();
+  }
+}
+
 module.exports = {
-  summary: getSiteSummary,
   add: addSite,
   details: getOneSite,
   delete: deleteSite,
-  getPluginsThemesList,
   updatePlugins,
   updateThemes,
+  getPluginList,
+  getThemeList,
+  changeOwnership,
+  enableSiteAuth,
+  disableSiteAuth,
+  fixSitePermission,
+  searchAndReplace,
+  cloneSite,
 };

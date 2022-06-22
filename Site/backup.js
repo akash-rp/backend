@@ -2,35 +2,33 @@ const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
 
 async function getBackupSettings(req, res) {
-  siteid = req.params.siteid;
+  let siteid = req.params.siteid;
   try {
-    backup = await mongodb
+    let backup = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .project({ backup: 1 })
-      .toArray();
-    backup = backup[0];
-    res.json(backup.backup);
+      .findOne({ userId: req.user.id, siteId: siteid })
+      .project({ backup: 1 });
+
+    return res.json(backup.backup);
   } catch (error) {
-    
+    console.log(error);
+    return res.status(400).send();
   }
 }
 
 async function updateLocalBackup(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
 
   try {
-    sites = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .project({ name: 1, user: 1, ip: 1 })
-      .toArray();
-    site = sites[0];
+      .findOne({ userId: req.user.id, siteId: siteid })
+      .project({ name: 1, user: 1, ip: 1 });
     await axios.post(
       "http://" +
         site.ip +
@@ -67,15 +65,16 @@ async function updateLocalBackup(req, res) {
 }
 
 async function takeLocalOndemandBackup(req, res) {
-  siteid = req.params.siteid;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid });
+      .findOne({ userId: req.user.id, siteId: siteid });
 
-    result = await axios.get(
+    let result = await axios.post(
       "http://" +
         site.ip +
         ":8081" +
@@ -83,6 +82,9 @@ async function takeLocalOndemandBackup(req, res) {
         site.name +
         "/" +
         site.user,
+      {
+        tag: data.tag,
+      },
       {
         headers: {
           "Content-Type": "application/json",
@@ -98,18 +100,17 @@ async function takeLocalOndemandBackup(req, res) {
 }
 
 async function getLocalBackupList(req, res) {
-  siteid = req.params.siteid;
-  mode = req.params.mode;
+  let siteid = req.params.siteid;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
-    site = site[0];
-
-    result = await axios.get(
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).send();
+    }
+    let result = await axios.get(
       "http://" +
         site.ip +
         ":8081/localbackup/list/" +
@@ -131,16 +132,15 @@ async function getLocalBackupList(req, res) {
 }
 
 async function restoreLocalBackup(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
-    site = site[0];
+      .findOne({ userId: req.user.id, siteId: siteid });
+
     await axios.get(
       "http://" +
         site.ip +
@@ -167,10 +167,43 @@ async function restoreLocalBackup(req, res) {
   }
 }
 
+async function downloadBackup(req, res) {
+  let siteid = req.params.siteid;
+  let mode = req.params.mode;
+  let id = req.params.id;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne({ userId: req.user.id, siteId: siteid });
+    if (!site) {
+      return res.status(404).send();
+    }
+    res.writeHead(200, {
+      "Content-Type": "application/zip",
+      "Content-disposition": "attachment;",
+    });
+    await axios
+      .get(
+        "http://" + site.ip + ":8081/site/backup/download/" + mode + "/" + id,
+        { responseType: "stream" }
+      )
+      .then((stream) => {
+        console.log(stream.data);
+        stream.data.pipe(res);
+      });
+    // res.send();
+  } catch (error) {
+    console.log(error);
+    return res.status(400).send();
+  }
+}
 module.exports = {
   settings: getBackupSettings,
   updateLocalBackup,
   takeOndemand: takeLocalOndemandBackup,
   getLocalBackupList,
   restoreLocalBackup,
+  downloadBackup,
 };

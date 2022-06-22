@@ -2,15 +2,18 @@ const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
 
 async function addCert(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid }, { projection: { _id: 0, ip: 1, name: 1 } });
-    result = await axios.post(
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { _id: 0, ip: 1, name: 1 } }
+      );
+    let result = await axios.post(
       "http://" + site.ip + ":8081/cert/add",
       {
         appName: site.name,
@@ -22,7 +25,6 @@ async function addCert(req, res) {
         headers: { "Content-Type": "application/json" },
       }
     );
-    console.log(result.data);
     if (data.type == "primary") {
       await mongodb
         .get()
@@ -58,14 +60,17 @@ async function addCert(req, res) {
 }
 
 async function enforceHttps(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid }, { projection: { _id: 0, name: 1, ip: 1 } });
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { _id: 0, name: 1, ip: 1 } }
+      );
     await axios.post(
       "http://" + site.ip + ":8081/enforceHttps",
       {
@@ -76,6 +81,7 @@ async function enforceHttps(req, res) {
         headers: { "Content-Type": "application/json" },
       }
     );
+    let operation;
     if (data.operation == "enable") {
       operation = true;
     } else {

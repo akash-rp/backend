@@ -14,7 +14,7 @@ async function getSiteSummary(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .project({ name: 1, user: 1, domain: { primary: { url: 1 } } })
       .toArray();
     res.json(data);
@@ -30,7 +30,7 @@ async function addSite(req, res) {
       .get()
       .db("hosting")
       .collection("servers")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .project({ ip: 1 })
       .toArray();
     result = result[0];
@@ -42,7 +42,7 @@ async function addSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .project({ domain: 1, siteId: 1, name: 1 })
       .toArray();
     const data = req.body;
@@ -83,16 +83,12 @@ async function addSite(req, res) {
         });
         return;
       }
-      console.log("site", site);
       if (site.domain.primary.subDomain) {
         if (site.domain.primary.baseurl === url) {
           if (!exclude.includes(site.domain.primary.url)) {
-            console.log("Inside exclude", site.domain.primary.url);
             exclude.push(site.domain.primary.url);
-            console.log(exclude);
           }
           if (!site.domain.exclude.includes(url)) {
-            console.log("inside domain exclude", url);
             site.domain.exclude.push(url);
             site.domain.exclude.push("www." + url);
           }
@@ -174,7 +170,6 @@ async function addSite(req, res) {
     let siteJSON = [];
     for (let site of sites) {
       let aliasDomain = [];
-      console.log("site json", site);
       for (let domain in site.domain.alias) {
         aliasDomain.push({
           url: domain.url,
@@ -196,7 +191,6 @@ async function addSite(req, res) {
         aliasDomain: aliasDomain,
         exclude: site.domain.exclude,
       });
-      console.log("exclude", exclude);
     }
     await axios.post(
       "http://" + result.ip + ":8081/wp/add",
@@ -254,7 +248,7 @@ async function addSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .toArray();
     let site = { [serverid]: result };
     res.json(site);
@@ -272,7 +266,7 @@ async function getSitesOfServer(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .toArray();
     let site = { [serverid]: result };
     res.json(site);
@@ -288,8 +282,7 @@ async function getOneSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ siteId: siteid })
-      .toArray();
+      .findOne({ siteId: siteid, userId: req.user.id });
     res.json(result);
   } catch (err) {
     res.status(400).json();
@@ -310,7 +303,7 @@ async function addDomainToSite(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .project({ name: 1, siteId: 1, domain: 1, ip: 1 })
       .toArray();
 
@@ -395,12 +388,9 @@ async function addDomainToSite(req, res) {
           return;
         }
         if (domain.subDomain) {
-          console.log("inside domain.subdoamin");
           if (domain.baseurl === url) {
             if (site.siteId !== siteid) {
-              console.log("should be here");
               mainSite.domain.exclude.push(domain.url);
-              console.log("main site", mainSite.domain.exclude);
               if (!site.domain.exclude.includes(url)) {
                 site.domain.exclude.push(url);
                 site.domain.exclude.push("www." + url);
@@ -458,7 +448,6 @@ async function addDomainToSite(req, res) {
         }
       }
     }
-    console.log("mian site exclude ", mainSite.domain.exclude);
     sites.forEach((site) => {
       if (site.siteId == siteid) {
         if (data.type == "alias") {
@@ -506,44 +495,34 @@ async function deleteDomain(req, res) {
   try {
     siteid = req.params.siteid;
     data = req.body;
-    console.log(data);
-    console.time("fetch all sites");
     let sites = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: data.serverid })
+      .find({ userId: req.user.id, serverId: data.serverid })
       .toArray();
-    console.timeEnd("fetch all sites");
     let mainSite;
-    console.time("getting main site");
 
     sites.forEach((site) => {
       if (site.siteId == siteid) {
         mainSite = site;
       }
     });
-    console.timeEnd("getting main site");
     if (mainSite == undefined) {
       res.json({ error: "site not found" });
     }
 
-    console.time("removing site");
     mainSite.domain.alias = mainSite.domain.alias.filter((ali) => {
       if (ali.url !== data.url) {
         return ali;
       }
     });
-    console.timeEnd("removing site");
     for (site of sites) {
       if (site.siteId === siteid) {
         site = mainSite;
       }
     }
-    console.time("Before JSON");
     siteJSON = addJSON(sites);
-    console.timeEnd("Before JSON");
-    console.time("axios post");
     await axios.post(
       "http://" + site.ip + ":8081/domainedit",
       {
@@ -556,14 +535,11 @@ async function deleteDomain(req, res) {
         },
       }
     );
-    console.timeEnd("axios post");
-    console.time("mongo");
     await mongodb
       .get()
       .db("hosting")
       .collection("sites")
       .updateOne({ siteId: siteid }, { $set: { domain: mainSite.domain } });
-    console.timeEnd("mongo");
     res.json({});
   } catch (err) {
     console.log(err);
@@ -584,7 +560,6 @@ function addJSON(sites) {
   result = [];
   for (let site of sites) {
     let aliasDomain = [];
-    console.log("Inside function", site);
     for (domain of site.domain.alias) {
       aliasDomain.push({
         url: domain.url,

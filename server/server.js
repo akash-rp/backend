@@ -1,19 +1,17 @@
-const mongodb = require("../db/mongo");
 const { customAlphabet } = require("nanoid");
 const { default: axios } = require("axios");
+const mongodb = require("../db/mongo");
+
+let isIP;
+(async () => {
+  isIP = await import("is-ip");
+})();
 
 const nanoid = customAlphabet(
   "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   12
 );
 async function getServers(req, res) {
-  if (!req.body.userId) {
-    res.status(400).json({
-      error: "Invalid JSON",
-    });
-    return;
-  }
-  const userId = req.body.userId;
   try {
     // data = await db.query(
     //   "SELECT name,inet_ntoa(ip),provider,serverid FROM servers WHERE userid = ? ",
@@ -23,9 +21,9 @@ async function getServers(req, res) {
       .get()
       .db("hosting")
       .collection("servers")
-      .find({ userId: userId })
+      .find({ userId: req.user.id })
       .toArray();
-    if (data.length == 0) {
+    if (data.length === 0) {
       res.json();
     } else res.json(data);
   } catch (error) {
@@ -42,8 +40,8 @@ async function addServer(req, res) {
   //   "INSERT into servers value (?,?,?,?,INET_ATON(?))",
   //   [nanoid.nanoid(12), data.userid, data.name, data.provider, data.ip]
   // );
-  id = nanoid();
-  insertData = {
+  let id = nanoid();
+  let insertData = {
     serverId: id,
     userId: data.userId,
     name: data.name,
@@ -67,31 +65,29 @@ async function addServer(req, res) {
 }
 
 async function serverDetails(req, res) {
-  const serverid = req.params.serverid;
+  const { serverid } = req.params;
   try {
     // INSERT into servers value (?,?,?,?,?)
-    let result = await mongodb
+    const result = await mongodb
       .get()
       .db("hosting")
       .collection("servers")
-      .find({ serverId: serverid })
-      .toArray();
-    sites = mongodb
+      .findOne({ userId: req.user.id, serverId: serverid });
+    let sites = mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .limit(5)
       .toArray();
-    result = result[0];
     if (!result) {
       throw Error;
     }
-    stats = axios.get("http://" + result.ip + ":8081/serverstats", {
+    let stats = axios.get(`http://${result.ip}:8081/serverstats`, {
       timeout: 5000,
     });
-    all = await Promise.all([sites, stats]);
-    final = { sites: all[0], stats: all[1].data };
+    let all = await Promise.all([sites, stats]);
+    let final = { sites: all[0], stats: all[1].data, ...result };
 
     // sites = sites.data;
     // sites = { sites: { ...sites } };
@@ -107,34 +103,70 @@ async function serverDetails(req, res) {
 }
 
 async function serverHealth(req, res) {
-  const serverid = req.params.serverid;
+  const { serverid } = req.params;
   try {
-    let server = await mongodb
+    const server = await mongodb
       .get()
       .db("hosting")
       .collection("servers")
-      .findOne({ serverId: serverid }, { projection: { _id: 0, ip: 1 } });
+      .findOne(
+        { userId: req.user.id, serverId: serverid },
+        { projection: { _id: 0, ip: 1 } }
+      );
     if (!server) {
       res.status(404).json({ error: "server not found" });
     }
-    metrics = await axios.get("http://" + server.ip + ":8081/metrics");
+    let metrics = await axios.get(`http://${server.ip}:8081/metrics`);
     res.json(metrics.data);
   } catch {
-    res.status(404).json({ error: "server not found" });
+    res.status(400).send();
   }
 }
-async function serviceStatus(req, res) {
-  const serverid = req.params.serverid;
+
+async function serverIndividualHealthMetris(req, res) {
+  const { serverid } = req.params;
+  const { metrics } = req.params;
+  const { duration } = req.params;
   try {
-    let server = await mongodb
+    const server = await mongodb
       .get()
       .db("hosting")
       .collection("servers")
-      .findOne({ serverId: serverid }, { projection: { _id: 0, ip: 1 } });
+      .findOne(
+        { userId: req.user.id, serverId: serverid },
+        { projection: { _id: 0, ip: 1 } }
+      );
+    if (!server) {
+      res.status(404).json({ error: "server not found" });
+    }
+    const result = await axios.get(
+      `http://${server.ip}:8081/metrics/${metrics
+        .charAt(0)
+        .toUpperCase()}${metrics.slice(1)}/${duration}`
+    );
+
+    res.json(result.data);
+  } catch (err) {
+    console.log(err);
+    res.status(400).send();
+  }
+}
+
+async function serviceStatus(req, res) {
+  const { serverid } = req.params;
+  try {
+    const server = await mongodb
+      .get()
+      .db("hosting")
+      .collection("servers")
+      .findOne(
+        { userId: req.user.id, serverId: serverid },
+        { projection: { _id: 0, ip: 1 } }
+      );
     if (!server) {
       return res.status(404).json({ error: "server not found" });
     }
-    service = await axios.get("http://" + server.ip + ":8081/service/status");
+    let service = await axios.get(`http://${server.ip}:8081/service/status`);
     res.json(service.data);
   } catch {
     res.status(404).json({ error: "server not found" });
@@ -142,20 +174,23 @@ async function serviceStatus(req, res) {
 }
 
 async function serviceControl(req, res) {
-  const serverid = req.params.serverid;
-  const control = req.params.control;
-  const process = req.params.process;
+  const { serverid } = req.params;
+  const { control } = req.params;
+  const { process } = req.params;
   try {
-    let server = await mongodb
+    const server = await mongodb
       .get()
       .db("hosting")
       .collection("servers")
-      .findOne({ serverId: serverid }, { projection: { _id: 0, ip: 1 } });
+      .findOne(
+        { userId: req.user.id, serverId: serverid },
+        { projection: { _id: 0, ip: 1 } }
+      );
     if (!server) {
       return res.status(404).json({ error: "server not found" });
     }
-    service = await axios.post(
-      "http://" + server.ip + ":8081/service/" + control + "/" + process,
+    let service = await axios.post(
+      `http://${server.ip}:8081/service/${control}/${process}`,
       {},
       {
         headers: {
@@ -170,26 +205,96 @@ async function serviceControl(req, res) {
   }
 }
 
+async function renameServerName(req, res) {
+  const { serverid } = req.params;
+  const { body } = req;
+  try {
+    const result = await mongodb
+      .get()
+      .db("hosting")
+      .collection("servers")
+      .findOneAndUpdate(
+        {
+          userID: req.user.id,
+          serverId: serverid,
+        },
+        { $set: { name: body.name } },
+        {
+          returnDocument: "after",
+        }
+      );
+    res.json(result.value);
+  } catch (err) {
+    console.log(err);
+    res.status(400).send();
+  }
+}
+
+async function changeServerIp(req, res) {
+  const { serverid } = req.params;
+  const { body } = req;
+  try {
+    if (!isIP.isIP(body.ip)) {
+      return res
+        .status(400)
+        .json({ error: { field: "ip", message: "Invalid IP" } });
+    }
+
+    const checkIp = await mongodb
+      .get()
+      .db("hosting")
+      .collection("servers")
+      .findOne({ ip: body.ip });
+
+    if (checkIp) {
+      return res
+        .status(404)
+        .json({ error: { field: "ip", message: "IP already exists" } });
+    }
+    const result = await mongodb
+      .get()
+      .db("hosting")
+      .collection("servers")
+      .findOneAndUpdate(
+        {
+          userId: req.user.id,
+          serverId: serverid,
+        },
+        { $set: { ip: body.ip } },
+        {
+          returnDocument: "after",
+        }
+      );
+    res.json(result.value);
+  } catch (err) {
+    console.log(err);
+    res.status(400).send();
+  }
+}
+
 module.exports = {
   get: getServers,
   add: addServer,
   details: serverDetails,
   sites: getSitesOfServer,
   health: serverHealth,
-  serviceStatus: serviceStatus,
+  serverIndividualHealthMetris,
+  serviceStatus,
   serviceControl,
+  renameServerName,
+  changeServerIp,
 };
 
 async function getSitesOfServer(req, res) {
   try {
-    serverid = req.params.serverid;
-    let result = await mongodb
+    let serverid = req.params.serverid;
+    const result = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .find({ serverId: serverid })
+      .find({ userId: req.user.id, serverId: serverid })
       .toArray();
-    let site = { [serverid]: result };
+    const site = { [serverid]: result };
     res.json(site);
   } catch (err) {
     res.status(400).json();

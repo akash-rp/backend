@@ -2,14 +2,17 @@ const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
 
 async function addSSHkey(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid }, { projection: { _id: 0, user: 1, ip: 1 } });
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { _id: 0, user: 1, ip: 1 } }
+      );
     await axios.post(
       "http://" + site.ip + ":8081/addSSH/" + site.user,
       JSON.stringify({
@@ -35,14 +38,17 @@ async function addSSHkey(req, res) {
 }
 
 async function removeSSHkey(req, res) {
-  siteid = req.params.siteid;
-  data = req.body;
+  let siteid = req.params.siteid;
+  let data = req.body;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid }, { projection: { _id: 0, user: 1, ip: 1 } });
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { _id: 0, user: 1, ip: 1 } }
+      );
     await axios.post(
       "http://" + site.ip + ":8081/removeSSH/" + site.user,
       JSON.stringify({

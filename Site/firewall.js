@@ -1,22 +1,27 @@
-const mongodb = require("../db/mongo");
 const { default: axios } = require("axios");
+const mongodb = require("../db/mongo");
 
 /** @type {import("express").RequestHandler} */
 async function update7Gwaf(req, res) {
-  let siteid = req.params.siteid;
-  body = req.body;
+  const { siteid } = req.params;
+  let body = req.body;
 
   try {
-    let mongo = mongodb.get();
-    let site = await mongo
-      .db("hosting")
-      .collection("sites")
-      .findOne({ siteId: siteid }, { _id: 0, ip: 1, name: 1, user: 1 });
+    const mongo = mongodb.get();
+    let site = await mongo.db("hosting").collection("sites").findOne(
+      { userId: req.user.id, siteId: siteid },
+      {
+        _id: 0,
+        ip: 1,
+        name: 1,
+        user: 1,
+      }
+    );
     if (site === undefined) {
       return res.status(404).send();
     }
     await axios.post(
-      "http://" + site.ip + ":8081/update7G",
+      `http://${site.ip}:8081/update7G`,
       {
         app: site.name,
         user: site.user,
@@ -33,7 +38,7 @@ async function update7Gwaf(req, res) {
       .db("hosting")
       .collection("sites")
       .findOneAndUpdate(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         {
           $set: {
             "firewall.sevenG": { enabled: body.enabled, disable: body.disable },
@@ -50,28 +55,26 @@ async function update7Gwaf(req, res) {
   }
 }
 
-/** @type {import("express").RequestHandler} */
-
 async function updateModsec(req, res) {
-  let siteid = req.params.siteid;
-  let body = req.body;
+  const { siteid } = req.params;
+  const { body } = req;
   try {
-    site = await mongodb
+    let site = await mongodb
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ siteId: siteid });
+      .findOne({ userId: req.user.id, siteId: siteid });
     if (site === undefined) {
       return res.status(400).send();
     }
-    let data = {
+    const data = {
       app: site.name,
       enabled: body.enabled,
       paranoiaLevel: +body.paranoiaLevel,
       anomalyThreshold: +body.anomalyThreshold,
     };
     console.log(data);
-    await axios.post("http://" + site.ip + ":8081/updateModsecurity", data, {
+    await axios.post(`http://${site.ip}:8081/updateModsecurity`, data, {
       headers: {
         "Content-Type": "application/json",
       },
@@ -81,7 +84,7 @@ async function updateModsec(req, res) {
       .db("hosting")
       .collection("sites")
       .findOneAndUpdate(
-        { siteId: siteid },
+        { userId: req.user.id, siteId: siteid },
         {
           $set: {
             "firewall.modsecurity": data,
