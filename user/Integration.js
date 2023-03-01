@@ -4,7 +4,7 @@ const mongodb = require("../db/mongo");
 async function addApiKey(req, res) {
   let body = req.body;
   let serviceParam = req.params.service;
-  let services = ["backup"];
+  let services = ["backup", "dns"];
   if (!services.includes(serviceParam)) {
     return res.status(400).send();
   }
@@ -56,7 +56,7 @@ async function getApiKeys(req, res) {
 }
 async function getServiceApiKeys(req, res) {
   let service = req.params.service;
-  let services = ["backup"];
+  let services = ["backup", "dns"];
   if (!services.includes(service)) {
     return res.status(400).send();
   }

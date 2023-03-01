@@ -19,6 +19,7 @@ const Dns = require("../dns-management/dns");
 const { registrationFlow } = require("../auth/login");
 const { default: axios } = require("axios");
 const Integration = require("../user/Integration");
+const RemoteBackup = require("../Site/remoteBackup");
 
 router.use((req, res, next) => {
   if (req.route != "/login") {
@@ -98,8 +99,22 @@ router.post("/site/:siteid/updatePhpIni", PHP.PhpMiddlware, PHP.updatePHPini);
 router.post("/site/:siteid/updatelocalbackup", Backup.updateLocalBackup);
 router.post("/site/:siteid/localondemandbackup", Backup.takeOndemand);
 router.get("/site/:siteid/localbackuplist/:mode", Backup.getLocalBackupList);
-router.post("/site/:siteid/restorelocalbackup", Backup.restoreLocalBackup);
+router.post("/site/:siteid/restorebackup", Backup.restoreBackup);
 router.get("/site/:siteid/backup/download/:mode/:id", Backup.downloadBackup);
+router.post("/site/:siteid/backup/remote/add", RemoteBackup.addRemoteStorage);
+router.get("/site/:siteid/backup/remote", RemoteBackup.listRemoteStorages);
+router.post(
+  "/site/:siteid/updateremotebackup",
+  RemoteBackup.updateRemoteStorage
+);
+router.get(
+  "/site/:siteid/backup/remote/list/:storage",
+  RemoteBackup.listRemoteBackups
+);
+router.post(
+  "/site/:siteid/backup/remote/ondemand",
+  RemoteBackup.takeRemoteOndemandBackup
+);
 
 router.post("/site/:siteid/createstaging", Staging.create);
 router.get("/site/:siteid/getdbtables", Staging.getDB);
@@ -126,7 +141,8 @@ router.post(
   SshKeys.deleteSshKey
 );
 
-router.post("/cert/add/:siteid", SSL.add);
+router.post("/site/:siteid/cert/add", SSL.add);
+router.get("/site/:siteid/cert/list", SSL.listCerts);
 router.post("/site/:siteid/enforceHttps", SSL.enforceHttps);
 
 router.post("/site/:siteid/firewall/sevenG/update", Firewall.update7Gwaf);

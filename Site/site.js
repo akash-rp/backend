@@ -11,8 +11,10 @@ async function addSite(req, res) {
       .get()
       .db("hosting")
       .collection("servers")
-      .findOne({ userId: req.user.id, serverId: serverid })
-      .project({ ip: 1 });
+      .findOne(
+        { userId: req.user.id, serverId: serverid },
+        { projection: { _id: 0, ip: 1 } }
+      );
 
     if (!result) {
       throw Error;

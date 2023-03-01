@@ -11,47 +11,50 @@ async function addCert(req, res) {
       .collection("sites")
       .findOne(
         { userId: req.user.id, siteId: siteid },
-        { projection: { _id: 0, ip: 1, name: 1 } }
+        { projection: { _id: 0, ip: 1, name: 1, user: 1 } }
       );
-    let result = await axios.post(
+    let token = "";
+    if (data.challenge == "dns-01") {
+      let apiKeys = await mongodb
+        .get()
+        .db("hosting")
+        .collection("users")
+        .findOne(
+          { userId: req.user.id },
+          { projection: { _id: 0, "integration.dns": 1 } }
+        );
+      if (!apiKeys) {
+        return res.status(404).send();
+      }
+      let api;
+      for (const apiKey of apiKeys.integration.dns) {
+        if (apiKey.name == data.api && apiKey.provider == data.dnsProvider) {
+          api = apiKey;
+          break;
+        }
+      }
+      if (!api) {
+        return res.status(404).send();
+      }
+      token = api.accessKey;
+    }
+    await axios.post(
       "http://" + site.ip + ":8081/cert/add",
       {
-        appName: site.name,
-        url: data.url,
-        domainType: data.type,
-        email: data.email,
+        app: site.name,
+        user: site.user,
+        domainName: data.domainName,
+        challenge: data.challenge,
+        domains: data.domains,
+        provider: data.provider,
+        dnsProvider: data.dnsProvider || "",
+        token: token,
       },
       {
         headers: { "Content-Type": "application/json" },
       }
     );
-    if (data.type == "primary") {
-      await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .updateOne(
-          { siteId: siteid },
-          {
-            $set: {
-              "domain.primary.ssl": { issued: true, expiry: result.data },
-            },
-          }
-        );
-    } else if (data.type == "alias") {
-      await mongodb
-        .get()
-        .db("hosting")
-        .collection("sites")
-        .updateOne(
-          { siteId: siteid, "domain.alias.url": data.url },
-          {
-            $set: {
-              "domain.alias.$.ssl": { issued: true, expiry: result.data },
-            },
-          }
-        );
-    }
+
     res.json("Success");
   } catch (error) {
     console.log(error);
@@ -59,6 +62,27 @@ async function addCert(req, res) {
   }
 }
 
+async function listCerts(req, res) {
+  let siteid = req.params.siteid;
+  try {
+    let site = await mongodb
+      .get()
+      .db("hosting")
+      .collection("sites")
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { _id: 0, ip: 1, name: 1 } }
+      );
+    let result = await axios.get(
+      "http://" + site.ip + ":8081/cert/list/" + site.name
+    );
+
+    res.json(result.data);
+  } catch (error) {
+    console.log(error);
+    res.status(404).json({ error: "Unable to fetch certificates" });
+  }
+}
 async function enforceHttps(req, res) {
   let siteid = req.params.siteid;
   let data = req.body;
@@ -99,4 +123,4 @@ async function enforceHttps(req, res) {
   }
 }
 
-module.exports = { add: addCert, enforceHttps };
+module.exports = { add: addCert, enforceHttps, listCerts };

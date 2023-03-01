@@ -8,9 +8,14 @@ async function getBackupSettings(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ userId: req.user.id, siteId: siteid })
-      .project({ backup: 1 });
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { backup: 1 } }
+      );
 
+    if (!backup) {
+      throw Error;
+    }
     return res.json(backup.backup);
   } catch (error) {
     console.log(error);
@@ -27,15 +32,15 @@ async function updateLocalBackup(req, res) {
       .get()
       .db("hosting")
       .collection("sites")
-      .findOne({ userId: req.user.id, siteId: siteid })
-      .project({ name: 1, user: 1, ip: 1 });
+      .findOne(
+        { userId: req.user.id, siteId: siteid },
+        { projection: { name: 1, user: 1, ip: 1 } }
+      );
     await axios.post(
       "http://" +
         site.ip +
         ":8081" +
         "/updatelocalbackup/" +
-        data.type +
-        "/" +
         site.name +
         "/" +
         site.user,
@@ -78,10 +83,12 @@ async function takeLocalOndemandBackup(req, res) {
       "http://" +
         site.ip +
         ":8081" +
-        "/takelocalondemandbackup/" +
+        "/takeondemandbackup/" +
         site.name +
         "/" +
-        site.user,
+        site.user +
+        "/local",
+
       {
         tag: data.tag,
       },
@@ -131,7 +138,7 @@ async function getLocalBackupList(req, res) {
   }
 }
 
-async function restoreLocalBackup(req, res) {
+async function restoreBackup(req, res) {
   let siteid = req.params.siteid;
   let data = req.body;
   try {
@@ -141,29 +148,15 @@ async function restoreLocalBackup(req, res) {
       .collection("sites")
       .findOne({ userId: req.user.id, siteId: siteid });
 
-    await axios.get(
-      "http://" +
-        site.ip +
-        ":8081/restorelocalbackup/" +
-        site.name +
-        "/" +
-        site.user +
-        "/" +
-        data.restore.mode +
-        "/" +
-        data.restore.id +
-        "/" +
-        data.restore.type,
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    await axios.post("http://" + site.ip + ":8081/restorebackup", {
+      name: site.name,
+      user: site.user,
+      restore: data.restore,
+    });
     res.json("Success");
   } catch (error) {
     console.log(error);
-    res.json({ error: "Cannot restore backup" });
+    res.status(400).json({ error: "Cannot restore backup" });
   }
 }
 
@@ -204,6 +197,6 @@ module.exports = {
   updateLocalBackup,
   takeOndemand: takeLocalOndemandBackup,
   getLocalBackupList,
-  restoreLocalBackup,
+  restoreBackup,
   downloadBackup,
 };

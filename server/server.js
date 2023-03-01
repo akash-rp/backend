@@ -223,6 +223,7 @@ async function renameServerName(req, res) {
           returnDocument: "after",
         }
       );
+
     res.json(result.value);
   } catch (err) {
     console.log(err);
